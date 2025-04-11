@@ -3,16 +3,16 @@ import { Card } from './Card';
 export class Player {
   id: string;
   name: string;
-  chips: number;
+  stack: number;
   holeCards: Card[] = [];
   currentBet: number = 0;
   folded: boolean = false;
   allIn: boolean = false;
 
-  constructor(id: string, name: string, startingChips: number) {
+  constructor(id: string, name: string, startingStack: number) {
     this.id = id;
     this.name = name;
-    this.chips = startingChips;
+    this.stack = startingStack;
   }
 
   receiveCards(cards: Card[]) {
@@ -24,13 +24,17 @@ export class Player {
   }
 
   bet(amount: number) {
-    if (amount > this.chips) {
-      amount = this.chips;
+    if (amount > this.stack) {
+      amount = this.stack;
       this.allIn = true;
     }
-    this.chips -= amount;
+    this.stack -= amount;
     this.currentBet += amount;
     return amount;
+  }
+
+  winPot(amount: number) {
+    this.stack += amount;
   }
 
   resetForNextHand() {

@@ -1,12 +1,16 @@
 import { Player } from './Player';
 import { PokerGame } from './POkerGame';
 import { Card } from './Card';
+import { hookConsoleLog } from './logger';
+hookConsoleLog();
+
 
 ////////////////////////////////////////////////////////////
 
 // Game Logic
 
 // Step 1: Create 6 players
+// Create 6 players with 1000 chips each
 const players: Player[] = [
     new Player('1', 'Alice', 1000),
     new Player('2', 'Bob', 1000),
@@ -16,32 +20,42 @@ const players: Player[] = [
     new Player('6', 'Fiona', 1000),
   ];
   
-  // Step 2: Initialize the game with all 6 players
   const game = new PokerGame(players);
+  const MAX_HANDS = 7; // or however many you want
   
-  // Step 3: Start the hand
-  game.startHand();
+  // ♻️ Play hands until only one player remains or max hands is hit
+  for (let handNumber = 1; handNumber <= MAX_HANDS; handNumber++) {
+    const activePlayers = game.getActivePlayers();
+    if (activePlayers.length <= 1) {
+      break;
+    }
   
-  // Step 4: Show hole cards for all players
-  players.forEach((player) => {
-    const hand = player.holeCards.map((c: any) => c.toString()).join(' ');
-    console.log(`${player.name}'s hand: ${hand}`);
-  });
+    console.log(`\n💥 Starting Hand #${handNumber} (${activePlayers.length} players)\n`);
   
-  // Step 5: Run the full game
-  game.bettingRound("Preflop");
+    game.startHand();
+    //game.postBlinds(); // This was already being called in startHand()
+    game.bettingRound("Preflop");
   
-  game.dealFlop();
-  game.bettingRound("Flop");
+    game.dealFlop();
+    game.bettingRound("Flop");
   
-  game.dealTurn();
-  game.bettingRound("Turn");
+    game.dealTurn();
+    game.bettingRound("Turn");
   
-  game.dealRiver();
-  game.bettingRound("River");
+    game.dealRiver();
+    game.bettingRound("River");
   
-  game.showdown();
-
+    game.showdown();
+    game.displayChipCounts();
+  }
+  
+  // Final winner
+  const finalPlayers = players.filter(p => p.stack > 0);
+  if (finalPlayers.length === 1) {
+    console.log(`🏆 ${finalPlayers[0].name} is the winner with ${finalPlayers[0].stack} chips!`);
+  } else {
+    console.log(`Game ended with multiple players still in.`);
+  }
 
 ////////////////////////////////////////////////////////////
 
