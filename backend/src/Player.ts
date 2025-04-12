@@ -8,6 +8,7 @@ export class Player {
   currentBet: number = 0;
   folded: boolean = false;
   allIn: boolean = false;
+  hasMadeDecisionThisRound: number = 0; // Added for tracking actions
 
   constructor(id: string, name: string, startingStack: number) {
     this.id = id;
@@ -42,5 +43,6 @@ export class Player {
     this.currentBet = 0;
     this.folded = false;
     this.allIn = false;
+    this.hasMadeDecisionThisRound = 0; // Reset for new hand
   }
 }
