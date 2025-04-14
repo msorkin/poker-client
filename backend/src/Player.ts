@@ -8,7 +8,7 @@ export class Player {
   currentBet: number = 0;
   folded: boolean = false;
   allIn: boolean = false;
-  hasMadeDecisionThisRound: number = 0; // Added for tracking actions
+  hasMadeDecisionThisRound: number = 0; // Still using number if you're not switching to boolean
 
   constructor(id: string, name: string, startingStack: number) {
     this.id = id;
@@ -40,9 +40,9 @@ export class Player {
 
   resetForNextHand() {
     this.holeCards = [];
-    this.currentBet = 0;
     this.folded = false;
-    this.allIn = false;
-    this.hasMadeDecisionThisRound = 0; // Reset for new hand
+    this.currentBet = 0;
+    this.hasMadeDecisionThisRound = 0;
+    this.allIn = false; // ✅ Reset allIn status between hands
   }
 }

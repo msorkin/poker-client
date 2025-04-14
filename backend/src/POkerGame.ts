@@ -31,15 +31,15 @@ export class PokerGame {
     const rotated = [...this.players.slice(this.dealerIndex), ...this.players.slice(0, this.dealerIndex)];
     this.players = rotated;
     this.dealerIndex = 0;
-
+  
     console.log(`\n💥 Starting Hand (Dealer: ${this.players[0].name})`);
     this.communityCards = [];
     this.pot = 0;
     this.deck.reset();
-
+  
     this.players.forEach(p => p.resetForNextHand());
     this.players.forEach(p => p.receiveCards(this.deck.deal(2)));
-
+  
     console.log("Hole cards dealt.");
     this.postBlinds();
   }
@@ -99,28 +99,39 @@ export class PokerGame {
 
   showdown() {
     const board = this.getCommunityCards();
-    const results = this.players.map(player => {
+    // Only include active (non-folded) players in the showdown calculation
+    const activePlayers = this.players.filter(player => !player.folded);
+    
+    const results = activePlayers.map(player => {
       const fullHand = [...player.holeCards, ...board];
       const best = HandEvaluator.evaluateBestHand(fullHand);
       return { player, hand: best };
     });
-
+  
     results.forEach(r => {
       console.log(`${r.player.name}'s best hand: ${describeHand(r.hand)}`);
     });
-
+  
     results.sort((a, b) => HandEvaluator.compareHands(a.hand, b.hand));
-    const winner = results[0];
-    console.log(`🏆 Winner: ${winner.player.name} with ${describeHand(winner.hand)}`);
-
-    const winners = results.filter(r => HandEvaluator.compareHands(r.hand, winner.hand) === 0);
-    const splitPot = Math.floor(this.pot / winners.length);
-
-    winners.forEach(w => {
-      w.player.stack += splitPot;
-      console.log(`${w.player.name} wins ${splitPot} chips.`);
-    });
-
+    
+    if (results.length > 0) {
+      const winner = results[0];
+      console.log(`🏆 Winner: ${winner.player.name} with ${describeHand(winner.hand)}`);
+  
+      const winners = results.filter(r => HandEvaluator.compareHands(r.hand, winner.hand) === 0);
+      const splitPot = Math.floor(this.pot / winners.length);
+  
+      winners.forEach(w => {
+        w.player.stack += splitPot;
+        console.log(`${w.player.name} wins ${splitPot} chips.`);
+      });
+    } else {
+      // Handle the case where everyone folded - the last remaining player should have been awarded the pot already
+      console.log("No players in showdown - pot already awarded to last remaining player.");
+    }
+  
+    // This keeps players with chips for the next hand,
+    // regardless of whether they folded in the current hand
     this.players = this.players.filter(p => p.stack > 0);
     this.displayChipCounts();
   }
@@ -164,34 +175,50 @@ export class PokerGame {
 
   bettingRound(roundName: string) {
     console.log(`\n--- ${roundName} Betting Round ---`);
-  
-    // Get players still playing
-    let activePlayers = this.players.filter(p => !p.folded && p.stack > 0);
-    // Stop if only one or no players
-    if (activePlayers.length <= 1) {
-      console.log("Only one player can act. Skipping betting round.");
+
+    let activePlayers: Player[] = [];
+    let canAct: Player[] = [];
+    
+    activePlayers = this.players.filter(p => !p.folded);
+
+    if (activePlayers.length === 1) {
+      const winner = activePlayers[0];
+      console.log(`All other players folded. ${winner.name} wins the pot of ${this.pot} chips.`);
+      winner.stack += this.pot;
+      this.pot = 0;
       return;
     }
+
+canAct = activePlayers.filter(p => p.stack > 0);
+
+if (canAct.length <= 1) {
+  console.log("All players are all-in or only one player can act. Skipping betting round.");
+  return;
+}
   
     // Reset decision flags
     this.players.forEach(p => (p.hasMadeDecisionThisRound = 0));
   
     // Get the order
     let bettingOrder = this.getBettingOrder(roundName);
+    
     // Current bet
     let currentBet = this.currentBet;
+    
     // Track last raise and bet amounts
     let lastRaiseAmount = roundName === 'Preflop' ? this.bigBlind : 0;
     let lastBetAmount = 0;
+    
     // Start with big blind as aggressor (preflop)
     let lastAggressor: Player | null = roundName === 'Preflop' ? this.players[(this.dealerIndex + 2) % this.players.length] : null;
-    let playerBeforeAggressor: Player | null = null;
-  
-    // Start with first player
+    
+    // Current player index
     let currentIndex = 0;
-  
-    // Keep going while multiple players
-    while (activePlayers.length > 1) {
+    
+    // Keep betting until all active players have acted and bets are matched
+    let roundComplete = false;
+    
+    while (!roundComplete) {
       let player = bettingOrder[currentIndex % bettingOrder.length];
   
       // Skip folded or no-chip players
@@ -212,7 +239,7 @@ export class PokerGame {
       } else {
         options.push('fold');
         options.push('call');
-        if (player.stack >= toCall) options.push('raise');
+        if (player.stack > toCall) options.push('raise');
       }
   
       console.log(`Options: ${options.join(', ')}`);
@@ -229,6 +256,13 @@ export class PokerGame {
         console.log(`${player.name} folds.`);
         player.hasMadeDecisionThisRound = 1;
         activePlayers = this.players.filter(p => !p.folded && p.stack > 0);
+        
+        // Check if only one player remains active
+        if (activePlayers.length === 1) {
+          console.log(`All players except ${activePlayers[0].name} have folded.`);
+          roundComplete = true;
+          break;
+        }
       } else if (action === 'check') {
         console.log(`${player.name} checks.`);
         player.hasMadeDecisionThisRound = 1;
@@ -259,22 +293,27 @@ export class PokerGame {
         currentBet = amount;
         lastAggressor = player;
         isAggressiveAction = true;
+        
+        // Reset decisions for all other players
         player.hasMadeDecisionThisRound = 1;
         activePlayers.forEach(p => {
           if (p !== player) p.hasMadeDecisionThisRound = 0;
         });
+        
         console.log(`${player.name} bets ${amount}.`);
       } else if (action === 'raise') {
-        const minRaise = lastRaiseAmount - lastBetAmount || this.bigBlind;
-        const minRaiseTo = lastRaiseAmount + minRaise;
-        const maxRaise = player.stack;
-        let raiseTo = parseInt(readlineSync.question(`Raise to (min ${minRaiseTo}${maxRaise < minRaise ? ', max ' + maxRaise : ''}): `));
+        const minRaise = Math.max(currentBet - lastBetAmount, this.bigBlind);
+        const minRaiseTo = currentBet + minRaise;
+        const maxRaise = player.stack + player.currentBet;
+        
+        let raiseTo = parseInt(readlineSync.question(`Raise to (min ${minRaiseTo}${maxRaise < minRaiseTo ? ', max ' + maxRaise : ''}): `));
+        
         while (
           isNaN(raiseTo) ||
-          raiseTo <= currentBet ||
-          raiseTo > player.currentBet + maxRaise
+          raiseTo < minRaiseTo ||
+          raiseTo > maxRaise
         ) {
-          raiseTo = parseInt(readlineSync.question(`Invalid amount. Raise to (min ${minRaiseTo}${maxRaise < minRaise ? ', max ' + maxRaise : ''}): `));
+          raiseTo = parseInt(readlineSync.question(`Invalid amount. Raise to (min ${minRaiseTo}${maxRaise < minRaiseTo ? ', max ' + maxRaise : ''}): `));
         }
   
         const raiseAmount = raiseTo - player.currentBet;
@@ -282,7 +321,7 @@ export class PokerGame {
         player.currentBet += raiseAmount;
         this.pot += raiseAmount;
   
-        if (raiseAmount < minRaise && raiseAmount === maxRaise) {
+        if (raiseAmount + player.currentBet === player.stack + raiseAmount) {
           console.log(`${player.name} is all-in with ${raiseAmount}, raising to ${raiseTo}.`);
         } else {
           console.log(`${player.name} raises to ${raiseTo}.`);
@@ -293,50 +332,37 @@ export class PokerGame {
         currentBet = raiseTo;
         lastAggressor = player;
         isAggressiveAction = true;
+        
+        // Reset decisions for all other players
         player.hasMadeDecisionThisRound = 1;
         activePlayers.forEach(p => {
           if (p !== player) p.hasMadeDecisionThisRound = 0;
         });
       }
   
-      // End round check
+      // Advance to next player
+      currentIndex++;
+      
+      // Check if the round is complete after this action
+      // Round is complete when all active players have made a decision AND
+      // either everyone has checked (currentBet === 0) or all bets are matched
       if (activePlayers.every(p => p.hasMadeDecisionThisRound === 1)) {
         const allBetsMatched = activePlayers.every(p => p.currentBet === currentBet || p.stack === 0);
-        if (currentBet === 0 || allBetsMatched) {
-          break;
+        if (allBetsMatched) {
+          roundComplete = true;
         }
       }
-  
-      // Update playerBeforeAggressor only for aggressive actions
-      if (lastAggressor && isAggressiveAction) {
-        const aggressorIndex = bettingOrder.indexOf(lastAggressor);
-        for (let i = 1; i <= bettingOrder.length; i++) {
-          const prevIndex = (aggressorIndex - i + bettingOrder.length) % bettingOrder.length;
-          const prevPlayer = bettingOrder[prevIndex];
-          if (!prevPlayer.folded && prevPlayer.stack > 0) {
-            playerBeforeAggressor = prevPlayer;
-            break;
-          }
-        }
-      }
-  
-      // After bet/raise, go to next player
-      if (isAggressiveAction) {
-        const nextPlayer = this.getNextActivePlayer(bettingOrder, player);
-        currentIndex = bettingOrder.indexOf(nextPlayer);
-        continue;
-      }
-  
-      // Move to next player
-      currentIndex++;
     }
   
-    // Reset for next round
+    // Update the current bet for the next round
     this.currentBet = 0;
+    
+    // Reset player bets for next round
     this.players.forEach(p => {
       p.currentBet = 0;
       p.hasMadeDecisionThisRound = 0;
     });
+    
     console.log(`Pot is now ${this.pot}`);
   }
 }
