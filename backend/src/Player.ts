@@ -6,6 +6,7 @@ export class Player {
   stack: number;
   holeCards: Card[] = [];
   currentBet: number = 0;
+  totalContributed: number = 0;
   folded: boolean = false;
   allIn: boolean = false;
   hasMadeDecisionThisRound: number = 0; // Still using number if you're not switching to boolean
@@ -42,6 +43,7 @@ export class Player {
     this.holeCards = [];
     this.folded = false;
     this.currentBet = 0;
+    this.totalContributed = 0;
     this.hasMadeDecisionThisRound = 0;
     this.allIn = false; // ✅ Reset allIn status between hands
   }

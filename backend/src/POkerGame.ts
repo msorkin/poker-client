@@ -11,9 +11,69 @@ export class PokerGame {
   private dealerIndex: number = 0;
   private pot: number = 0;
   private currentBet: number = 0;
+  private sidePots: { amount: number; contenders: Player[] }[] = [];
 
   private smallBlind: number;
   private bigBlind: number;
+
+  private rebuildSidePots() {
+    this.sidePots = [];
+  
+    if (this.pot <= 0) return;
+  
+    const allInPlayers = this.players
+      .filter(p => p.stack === 0 && p.totalContributed > 0)
+      .sort((a, b) => a.totalContributed - b.totalContributed);
+  
+    if (allInPlayers.length === 0) {
+      this.sidePots = [{
+        amount: this.pot,
+        contenders: this.players.filter(p => !p.folded)
+      }];
+      return;
+    }
+  
+    const lowestAllIn = allInPlayers[0].totalContributed;
+  
+    // Any player who contributed anything goes into the main pot,
+    // but only up to the all-in amount
+    const contributors = this.players.filter(p => p.totalContributed > 0);
+    const mainPotBase = contributors.reduce((sum, p) => {
+      return sum + Math.min(p.totalContributed, lowestAllIn);
+    }, 0);
+  
+    const mainPotContenders = this.players.filter(
+      p => !p.folded && p.totalContributed >= lowestAllIn
+    );
+  
+    this.sidePots.push({
+      amount: mainPotBase,
+      contenders: mainPotContenders
+    });
+  
+    let remainingPot = this.pot - mainPotBase;
+  
+    if (remainingPot > 0) {
+      const sidePotContenders = this.players.filter(
+        p => !p.folded && p.totalContributed > lowestAllIn
+      );
+  
+      this.sidePots.push({
+        amount: remainingPot,
+        contenders: sidePotContenders
+      });
+    }
+  
+    // Debug logging
+    console.log("--- Debug Side Pot Calculation ---");
+    console.log(`Total pot: ${this.pot}`);
+    console.log(`All-in players: ${allInPlayers.map(p => `${p.name}(${p.totalContributed})`).join(', ')}`);
+    console.log(`Lowest all-in: ${lowestAllIn}`);
+    console.log(`Main pot contenders: ${mainPotContenders.map(p => p.name).join(', ')}`);
+    console.log(`Main pot base (with blinds): ${mainPotBase}`);
+    console.log(`Side pot amount: ${remainingPot}`);
+    console.log("--------------------------------");
+  }
 
   constructor(players: Player[], smallBlind: number = 5, bigBlind: number = 10) {
     if (players.length < 2 || players.length > 6) {
@@ -31,10 +91,12 @@ export class PokerGame {
     const rotated = [...this.players.slice(this.dealerIndex), ...this.players.slice(0, this.dealerIndex)];
     this.players = rotated;
     this.dealerIndex = 0;
+    
   
     console.log(`\n💥 Starting Hand (Dealer: ${this.players[0].name})`);
     this.communityCards = [];
     this.pot = 0;
+    this.sidePots = []; // Reset side pots at the beginning of the hand
     this.deck.reset();
   
     this.players.forEach(p => p.resetForNextHand());
@@ -47,16 +109,20 @@ export class PokerGame {
   postBlinds() {
     const sbIndex = (this.dealerIndex + 1) % this.players.length;
     const bbIndex = (this.dealerIndex + 2) % this.players.length;
-
+  
     const sb = this.players[sbIndex];
     const bb = this.players[bbIndex];
-
+  
     const sbAmount = sb.bet(this.smallBlind);
     const bbAmount = bb.bet(this.bigBlind);
-
+  
+    // ✅ Track small blind and big blind in totalContributed
+    sb.totalContributed += sbAmount;
+    bb.totalContributed += bbAmount;
+  
     this.pot += sbAmount + bbAmount;
     this.currentBet = this.bigBlind;
-
+  
     console.log(`${sb.name} posts small blind: ${sbAmount}`);
     console.log(`${bb.name} posts big blind: ${bbAmount}`);
   }
@@ -99,39 +165,56 @@ export class PokerGame {
 
   showdown() {
     const board = this.getCommunityCards();
-    // Only include active (non-folded) players in the showdown calculation
-    const activePlayers = this.players.filter(player => !player.folded);
+    const playersInShowdown = this.players.filter(p => !p.folded && p.holeCards.length > 0);
+  
+    // Make sure side pots are updated
+    this.rebuildSidePots();
     
-    const results = activePlayers.map(player => {
-      const fullHand = [...player.holeCards, ...board];
-      const best = HandEvaluator.evaluateBestHand(fullHand);
-      return { player, hand: best };
-    });
-  
-    results.forEach(r => {
-      console.log(`${r.player.name}'s best hand: ${describeHand(r.hand)}`);
-    });
-  
-    results.sort((a, b) => HandEvaluator.compareHands(a.hand, b.hand));
-    
-    if (results.length > 0) {
-      const winner = results[0];
-      console.log(`🏆 Winner: ${winner.player.name} with ${describeHand(winner.hand)}`);
-  
-      const winners = results.filter(r => HandEvaluator.compareHands(r.hand, winner.hand) === 0);
-      const splitPot = Math.floor(this.pot / winners.length);
-  
-      winners.forEach(w => {
-        w.player.stack += splitPot;
-        console.log(`${w.player.name} wins ${splitPot} chips.`);
+    if (this.sidePots.length === 0) {
+      // If no side pots were created, make a main pot with all chips
+      this.sidePots.push({
+        amount: this.pot,
+        contenders: [...playersInShowdown]
       });
-    } else {
-      // Handle the case where everyone folded - the last remaining player should have been awarded the pot already
-      console.log("No players in showdown - pot already awarded to last remaining player.");
     }
   
-    // This keeps players with chips for the next hand,
-    // regardless of whether they folded in the current hand
+    // Evaluate hands
+    const handResults = new Map<Player, ReturnType<typeof HandEvaluator.evaluateBestHand>>();
+    for (const player of playersInShowdown) {
+      const fullHand = [...player.holeCards, ...board];
+      const best = HandEvaluator.evaluateBestHand(fullHand);
+      handResults.set(player, best);
+      console.log(`${player.name}'s best hand: ${describeHand(best)}`);
+    }
+  
+    // Distribute each pot
+    for (const [i, pot] of this.sidePots.entries()) {
+      const contenders = pot.contenders.filter(p => handResults.has(p));
+      if (contenders.length === 0) continue;
+  
+      contenders.sort((a, b) =>
+        HandEvaluator.compareHands(handResults.get(a)!, handResults.get(b)!)
+      );
+  
+      const bestHand = handResults.get(contenders[0])!;
+      const winners = contenders.filter(p =>
+        HandEvaluator.compareHands(handResults.get(p)!, bestHand) === 0
+      );
+  
+      const share = Math.floor(pot.amount / winners.length);
+      const remainder = pot.amount % winners.length;
+      const potLabel = i === 0 ? 'main pot' : `side pot #${i}`;
+      
+      winners.forEach((p, idx) => {
+        // Add remainder to first winner if pot doesn't divide evenly
+        const winAmount = idx === 0 ? share + remainder : share;
+        p.stack += winAmount;
+        console.log(`${p.name} wins ${winAmount} chips from ${potLabel}.`);
+      });
+    }
+  
+    this.players.forEach(p => p.totalContributed = 0);
+    this.pot = 0;
     this.players = this.players.filter(p => p.stack > 0);
     this.displayChipCounts();
   }
@@ -212,11 +295,18 @@ if (canAct.length <= 1) {
     // Start with big blind as aggressor (preflop)
     let lastAggressor: Player | null = roundName === 'Preflop' ? this.players[(this.dealerIndex + 2) % this.players.length] : null;
     
+    let lastBetBeforeRaise = 0;
+    let lastRaiseTo = 0;
+    let lastLegalRaiseTo = 0;
+    let lastLegalAggressor: Player | null = null;
+
     // Current player index
     let currentIndex = 0;
     
     // Keep betting until all active players have acted and bets are matched
     let roundComplete = false;
+    
+    let wasShortRaise = false;
     
     while (!roundComplete) {
       let player = bettingOrder[currentIndex % bettingOrder.length];
@@ -239,7 +329,12 @@ if (canAct.length <= 1) {
       } else {
         options.push('fold');
         options.push('call');
-        if (player.stack > toCall) options.push('raise');
+        if (
+            player.stack > toCall &&
+            !(wasShortRaise && lastLegalAggressor === player)
+          ) {
+            options.push('raise');
+          }
       }
   
       console.log(`Options: ${options.join(', ')}`);
@@ -270,6 +365,7 @@ if (canAct.length <= 1) {
         const amount = Math.min(toCall, player.stack);
         player.stack -= amount;
         player.currentBet += amount;
+        player.totalContributed += amount;
         this.pot += amount;
   
         if (amount < toCall) {
@@ -286,10 +382,12 @@ if (canAct.length <= 1) {
   
         player.stack -= amount;
         player.currentBet += amount;
+        player.totalContributed += amount;
         this.pot += amount;
   
-        lastBetAmount = currentBet;
-        lastRaiseAmount = amount;
+        lastBetBeforeRaise = 0;
+        lastRaiseTo = amount;
+        lastLegalRaiseTo = amount;
         currentBet = amount;
         lastAggressor = player;
         isAggressiveAction = true;
@@ -301,39 +399,49 @@ if (canAct.length <= 1) {
         });
         
         console.log(`${player.name} bets ${amount}.`);
-      } else if (action === 'raise') {
-        const minRaise = Math.max(currentBet - lastBetAmount, this.bigBlind);
-        const minRaiseTo = currentBet + minRaise;
+    } else if (action === 'raise') {
+        const minRaiseAmount = lastLegalRaiseTo - lastBetBeforeRaise;
+        const minRaiseTo = currentBet + minRaiseAmount;
         const maxRaise = player.stack + player.currentBet;
-        
+      
         let raiseTo = parseInt(readlineSync.question(`Raise to (min ${minRaiseTo}${maxRaise < minRaiseTo ? ', max ' + maxRaise : ''}): `));
-        
+      
         while (
-          isNaN(raiseTo) ||
-          raiseTo < minRaiseTo ||
-          raiseTo > maxRaise
-        ) {
+            isNaN(raiseTo) ||
+            raiseTo > maxRaise ||
+            (raiseTo < minRaiseTo && raiseTo < maxRaise)  // allow all-in short raise if raiseTo === max
+          ) {
           raiseTo = parseInt(readlineSync.question(`Invalid amount. Raise to (min ${minRaiseTo}${maxRaise < minRaiseTo ? ', max ' + maxRaise : ''}): `));
         }
-  
+      
         const raiseAmount = raiseTo - player.currentBet;
         player.stack -= raiseAmount;
         player.currentBet += raiseAmount;
+        player.totalContributed += raiseAmount;
         this.pot += raiseAmount;
-  
-        if (raiseAmount + player.currentBet === player.stack + raiseAmount) {
+      
+        if (player.stack === 0) {
           console.log(`${player.name} is all-in with ${raiseAmount}, raising to ${raiseTo}.`);
         } else {
           console.log(`${player.name} raises to ${raiseTo}.`);
         }
-  
-        lastBetAmount = currentBet;
-        lastRaiseAmount = raiseTo;
-        currentBet = raiseTo;
+      
+        // Detect if this is a short raise
+        wasShortRaise = (raiseTo - currentBet) < minRaiseAmount;
+      
+        if (!wasShortRaise) {
+          lastLegalAggressor = player;
+          lastLegalRaiseTo = raiseTo;
+          lastBetBeforeRaise = currentBet;
+        }
+      
         lastAggressor = player;
+        lastRaiseTo = raiseTo;
+        currentBet = raiseTo;
+        lastBetAmount = currentBet;
         isAggressiveAction = true;
-        
-        // Reset decisions for all other players
+      
+        // Reset decision flags for other players
         player.hasMadeDecisionThisRound = 1;
         activePlayers.forEach(p => {
           if (p !== player) p.hasMadeDecisionThisRound = 0;
@@ -342,7 +450,10 @@ if (canAct.length <= 1) {
   
       // Advance to next player
       currentIndex++;
-      
+
+      activePlayers = this.players.filter(p => !p.folded && p.stack > 0);
+      canAct = activePlayers.filter(p => p.stack > 0);
+
       // Check if the round is complete after this action
       // Round is complete when all active players have made a decision AND
       // either everyone has checked (currentBet === 0) or all bets are matched
@@ -353,16 +464,22 @@ if (canAct.length <= 1) {
         }
       }
     }
-  
+
     // Update the current bet for the next round
     this.currentBet = 0;
-    
+
     // Reset player bets for next round
     this.players.forEach(p => {
-      p.currentBet = 0;
-      p.hasMadeDecisionThisRound = 0;
-    });
-    
-    console.log(`Pot is now ${this.pot}`);
+    p.currentBet = 0;
+    p.hasMadeDecisionThisRound = 0;
+});
+
+this.rebuildSidePots();
+const mainPot = this.sidePots.length > 0 ? this.sidePots[0].amount : this.pot;
+const sidePot = this.sidePots.length > 1 
+  ? this.sidePots.slice(1).reduce((sum, pot) => sum + pot.amount, 0) 
+  : 0;
+console.log(`Pot is now ${this.pot} (Main pot: ${mainPot}, Side pot: ${sidePot})`);
+
   }
 }
