@@ -1,9 +1,17 @@
 import { Player } from './Player';
-import { PokerGame } from './POkerGame';
-import { Card } from './Card';
+import { CLIPokerGame } from './CLIPokerGame';
 import { hookConsoleLog } from './logger';
+import { PokerGame } from './POkerGame';
+import { PokerGameController } from './PokerGameController';
+//import { Card } from './Card'; *only if you want to force cards for debugging*
 hookConsoleLog();
 
+class DebugPokerGame extends PokerGame {
+    protected async requestPlayerAction(player: Player, options: string[]): Promise<string> {
+      console.log(`DEBUG: Autoselecting "${options[0]}" for ${player.name}`);
+      return options[0]; // always picks the first option
+    }
+  }
 
 ////////////////////////////////////////////////////////////
 
@@ -19,44 +27,14 @@ const players: Player[] = [
     new Player('5', 'Eddie', 1000),
     new Player('6', 'Fiona', 45),
   ];
-  
-  const game = new PokerGame(players);
-  const MAX_HANDS = 7; // or however many you want
-  
-  // ♻️ Play hands until only one player remains or max hands is hit
-  for (let handNumber = 1; handNumber <= MAX_HANDS; handNumber++) {
-    const activePlayers = game.getActivePlayers();
-    if (activePlayers.length <= 1) {
-      break;
-    }
-  
-    console.log(`\n💥 Starting Hand #${handNumber} (${activePlayers.length} players)\n`);
-  
-    game.startHand();
-    //game.postBlinds(); // This was already being called in startHand()
-    game.bettingRound("Preflop");
-  
-    game.dealFlop();
-    game.bettingRound("Flop");
-  
-    game.dealTurn();
-    game.bettingRound("Turn");
-  
-    game.dealRiver();
-    game.bettingRound("River");
-  
-    game.showdown();
-    game.displayChipCounts();
-  }
-  
-  // Final winner
-  const finalPlayers = players.filter(p => p.stack > 0);
-  if (finalPlayers.length === 1) {
-    console.log(`🏆 ${finalPlayers[0].name} is the winner with ${finalPlayers[0].stack} chips!`);
-  } else {
-    console.log(`Game ended with multiple players still in.`);
-  }
 
+  const game = new CLIPokerGame(players, 5, 10);
+  //const game = new DebugPokerGame(players, 5, 10);
+  
+  (async () => {
+    const controller = new PokerGameController(game, 7);
+    await controller.run();
+  })();
 ////////////////////////////////////////////////////////////
 
 /* TEST: One Pair + kicker tiebreaker

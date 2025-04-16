@@ -2,20 +2,31 @@ import { HandEvaluator, describeHand } from './HandEvaluator';
 import { Deck } from './Deck';
 import { Player } from './Player';
 import { Card } from './Card';
-import readlineSync from 'readline-sync';
+
 
 export class PokerGame {
-  private players: Player[];
-  private deck: Deck;
+  private players!: Player[];
+  private deck!: Deck;
   private communityCards: Card[] = [];
   private dealerIndex: number = 0;
   private pot: number = 0;
   private currentBet: number = 0;
   private sidePots: { amount: number; contenders: Player[] }[] = [];
 
-  private smallBlind: number;
-  private bigBlind: number;
+  private smallBlind!: number;
+  private bigBlind!: number;
 
+  constructor(players: Player[], smallBlind: number = 5, bigBlind: number = 10) {
+    if (players.length < 2 || players.length > 6) {
+      throw new Error("This version supports between 2 and 6 players.");
+    }
+  
+    this.players = players;
+    this.deck = new Deck();
+    this.smallBlind = smallBlind;
+    this.bigBlind = bigBlind;
+  }
+  
   private rebuildSidePots() {
     this.sidePots = [];
   
@@ -35,8 +46,6 @@ export class PokerGame {
   
     const lowestAllIn = allInPlayers[0].totalContributed;
   
-    // Any player who contributed anything goes into the main pot,
-    // but only up to the all-in amount
     const contributors = this.players.filter(p => p.totalContributed > 0);
     const mainPotBase = contributors.reduce((sum, p) => {
       return sum + Math.min(p.totalContributed, lowestAllIn);
@@ -74,16 +83,73 @@ export class PokerGame {
     console.log(`Side pot amount: ${remainingPot}`);
     console.log("--------------------------------");
   }
-
-  constructor(players: Player[], smallBlind: number = 5, bigBlind: number = 10) {
-    if (players.length < 2 || players.length > 6) {
-      throw new Error("This version supports between 2 and 6 players.");
+  
+  private pendingActionResolver: ((action: string) => void) | null = null;
+  private pendingActionOptions: string[] = [];
+  private currentPlayerAwaitingAction: Player | null = null;
+  
+  private pendingAmountResolver: ((amount: number) => void) | null = null;
+  private currentPlayerAwaitingAmount: Player | null = null;
+  private amountRange: { min: number; max: number } = { min: 0, max: 0 };
+  
+  protected async requestPlayerAction(player: Player, options: string[]): Promise<string> {
+    return new Promise((resolve) => {
+      this.pendingActionResolver = resolve;
+      this.pendingActionOptions = options;
+      this.currentPlayerAwaitingAction = player;
+    });
+  }
+  
+  protected async requestPlayerAmount(player: Player, prompt: string, min: number, max: number): Promise<number> {
+    console.log(`requestPlayerAmount called for ${player.name}: ${prompt} (min: ${min}, max: ${max})`);
+    return new Promise((resolve) => {
+      this.pendingAmountResolver = resolve;
+      this.currentPlayerAwaitingAmount = player;
+      this.amountRange = { min, max };
+    });
+  }
+  
+  public handleAction(player: Player, action: string) {
+    if (!this.pendingActionResolver) {
+      console.warn("No action is currently pending.");
+      return;
     }
-
-    this.players = players;
-    this.deck = new Deck();
-    this.smallBlind = smallBlind;
-    this.bigBlind = bigBlind;
+  
+    if (this.currentPlayerAwaitingAction !== player) {
+      console.warn(`It's not ${player.name}'s turn.`);
+      return;
+    }
+  
+    if (!this.pendingActionOptions.includes(action)) {
+      console.warn(`Invalid action "${action}". Valid options: ${this.pendingActionOptions.join(', ')}`);
+      return;
+    }
+  
+    this.pendingActionResolver(action);
+    this.pendingActionResolver = null;
+    this.currentPlayerAwaitingAction = null;
+    this.pendingActionOptions = [];
+  }
+  
+  public handleAmount(player: Player, amount: number) {
+    if (!this.pendingAmountResolver) {
+      console.warn("No amount is currently pending.");
+      return;
+    }
+  
+    if (this.currentPlayerAwaitingAmount !== player) {
+      console.warn(`It's not ${player.name}'s turn.`);
+      return;
+    }
+  
+    if (amount < this.amountRange.min || amount > this.amountRange.max) {
+      console.warn(`Invalid amount: ${amount}. Must be between ${this.amountRange.min} and ${this.amountRange.max}`);
+      return;
+    }
+  
+    this.pendingAmountResolver(amount);
+    this.pendingAmountResolver = null;
+    this.currentPlayerAwaitingAmount = null;
   }
 
   startHand() {
@@ -256,7 +322,7 @@ export class PokerGame {
     return this.players.filter(p => p.stack > 0);
   }
 
-  bettingRound(roundName: string) {
+  async bettingRound(roundName: string) {
     console.log(`\n--- ${roundName} Betting Round ---`);
 
     let activePlayers: Player[] = [];
@@ -338,10 +404,11 @@ if (canAct.length <= 1) {
       }
   
       console.log(`Options: ${options.join(', ')}`);
-      let action = readlineSync.question('Choose action: ').toLowerCase();
-  
+      let action = await this.requestPlayerAction(player, options);
+      
       while (!options.includes(action)) {
-        action = readlineSync.question('Invalid action. Choose again: ').toLowerCase();
+        console.log(`Invalid action received: "${action}". Asking again.`);
+        action = await this.requestPlayerAction(player, options);
       }
   
       let isAggressiveAction = false;
@@ -375,10 +442,12 @@ if (canAct.length <= 1) {
         }
         player.hasMadeDecisionThisRound = 1;
       } else if (action === 'bet') {
-        let amount = parseInt(readlineSync.question(`Enter bet amount (min ${this.bigBlind}): `));
-        while (isNaN(amount) || amount < this.bigBlind || amount > player.stack) {
-          amount = parseInt(readlineSync.question(`Invalid amount. Enter bet amount (min ${this.bigBlind}): `));
-        }
+        let amount = await this.requestPlayerAmount(
+            player,
+            `Enter bet amount (min ${this.bigBlind}):`,
+            this.bigBlind,
+            player.stack
+          );
   
         player.stack -= amount;
         player.currentBet += amount;
@@ -404,15 +473,12 @@ if (canAct.length <= 1) {
         const minRaiseTo = currentBet + minRaiseAmount;
         const maxRaise = player.stack + player.currentBet;
       
-        let raiseTo = parseInt(readlineSync.question(`Raise to (min ${minRaiseTo}${maxRaise < minRaiseTo ? ', max ' + maxRaise : ''}): `));
-      
-        while (
-            isNaN(raiseTo) ||
-            raiseTo > maxRaise ||
-            (raiseTo < minRaiseTo && raiseTo < maxRaise)  // allow all-in short raise if raiseTo === max
-          ) {
-          raiseTo = parseInt(readlineSync.question(`Invalid amount. Raise to (min ${minRaiseTo}${maxRaise < minRaiseTo ? ', max ' + maxRaise : ''}): `));
-        }
+        let raiseTo = await this.requestPlayerAmount(
+            player,
+            `Raise to (min ${minRaiseTo}${maxRaise < minRaiseTo ? ', max ' + maxRaise : ''}):`,
+            Math.min(minRaiseTo, maxRaise),
+            maxRaise
+          );
       
         const raiseAmount = raiseTo - player.currentBet;
         player.stack -= raiseAmount;
@@ -482,4 +548,34 @@ const sidePot = this.sidePots.length > 1
 console.log(`Pot is now ${this.pot} (Main pot: ${mainPot}, Side pot: ${sidePot})`);
 
   }
+
+  getGameState(showHoleCards: boolean = false) {
+    const state = {
+      communityCards: this.communityCards.map(card => ({
+        suit: card.suit,
+        rank: card.rank
+      })),
+      pot: this.pot,
+      sidePots: this.sidePots.map(pot => ({
+        amount: pot.amount,
+        contenders: pot.contenders.map(p => p.name)
+      })),
+      players: this.players.map(player => ({
+        name: player.name,
+        stack: player.stack,
+        currentBet: player.currentBet,
+        totalContributed: player.totalContributed,
+        folded: player.folded,
+        allIn: player.stack === 0,
+        holeCards: showHoleCards || player.stack === 0 || player.folded
+          ? player.holeCards.map(card => ({ suit: card.suit, rank: card.rank }))
+          : []
+      })),
+      currentTurn: this.players.find(p => !p.folded && p.hasMadeDecisionThisRound === 0)?.name ?? null,
+      showdown: showHoleCards // 👈 this line makes the controller logic work
+    };
+  
+    return state;
+  }
+
 }
