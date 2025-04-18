@@ -36,37 +36,32 @@ function App() {
   });
   const [gameStarted, setGameStarted] = useState(false);
 
-  useEffect(() => {
-    if (!playerId) return;
-    fetch(`http://localhost:3001/state/${playerId}`)
-      .then((res) => res.json())
-      .then((data) => setGameState(data))
-      .catch((err) => console.error('Error fetching game state:', err));
-  }, [playerId]);
-
-  useEffect(() => {
-    if (gameState?.currentTurn) {
-      setGameStarted(true);
-    }
-  }, [gameState]);
-
   const startGame = async () => {
     try {
       const response = await fetch("http://localhost:3001/start", { method: "POST" });
       if (!response.ok) throw new Error('Failed to start game');
       
-      setTimeout(async () => {
-        const updatedState = await fetch(`http://localhost:3001/state/${playerId}`);
-        const data = await updatedState.json();
-        setGameState(data);
-        setGameStarted(true);
-      }, 500); // give backend a moment to update
-  
-      setGameStarted(true); // ← ADD THIS
+      // Set game started immediately
+      setGameStarted(true);
+      
+      // Fetch updated state after a short delay
+      setTimeout(() => {
+        fetch(`http://localhost:3001/state/${playerId}`)
+          .then((res) => res.json())
+          .then((data) => setGameState(data));
+      }, 500);
     } catch (err) {
       console.error('Error starting game:', err);
     }
   };
+
+  useEffect(() => {
+    if (!playerId) return;
+    
+    fetch(`http://localhost:3001/state/${playerId}`)
+      .then((res) => res.json())
+      .then((data) => setGameState(data));
+  }, [playerId]);
 
   if (!playerId) {
     return (
@@ -90,7 +85,21 @@ function App() {
     );
   }
 
-  if (!gameState) return <div>Loading game...</div>;
+  if (!gameState) {
+    return (
+      <div>
+        <h2>Loading game...</h2>
+        <button
+          onClick={() => {
+            localStorage.removeItem("playerId");
+            window.location.reload();
+          }}
+        >
+          Reset Player
+        </button>
+      </div>
+    );
+  }
 
   const numPlayers = gameState.players.length;
   const dealerIndex = gameState.dealerIndex;
