@@ -59,22 +59,15 @@ app.post('/amount', (req: Request, res: Response) => {
 });
 
 app.post('/start', async (req: Request, res: Response) => {
-    if (isGameRunning) {
-      res.status(400).send('Game already running');
-      return;
-    }
-  
-    isGameRunning = true;
-    try {
-      await controller.run();
-      res.send('Game finished');
-    } catch (err) {
-      console.error('Game crashed:', err);
-      res.status(500).send('Server crashed');
-    } finally {
-      isGameRunning = false;
-    }
-  });
+  try {
+    game.startHand();
+    await game.bettingRound("Preflop");
+    res.send('Game started');
+  } catch (err) {
+    console.error('Game crashed:', err);
+    res.status(500).send('Server crashed');
+  }
+});
 
 // --- Start Server ---
 const PORT = 3001;

@@ -13,6 +13,10 @@ export class PokerGame {
   private currentBet: number = 0;
   private sidePots: { amount: number; contenders: Player[] }[] = [];
 
+  private pendingActionPlayer: Player | null = null;
+  private currentAction: string = '';
+  private lastReceivedAmount: number | null = null;
+
   private smallBlind!: number;
   private bigBlind!: number;
 
@@ -109,7 +113,7 @@ export class PokerGame {
     });
   }
   
-  public handleAction(player: Player, action: string) {
+  public async handleAction(player: Player, action: string) {
     if (!this.pendingActionResolver) {
       console.warn("No action is currently pending.");
       return;
@@ -121,17 +125,53 @@ export class PokerGame {
     }
   
     if (!this.pendingActionOptions.includes(action)) {
-      console.warn(`Invalid action "${action}". Valid options: ${this.pendingActionOptions.join(', ')}`);
+      console.warn(`Invalid action "${action}".`);
       return;
     }
   
-    this.pendingActionResolver(action);
-    this.pendingActionResolver = null;
-    this.currentPlayerAwaitingAction = null;
-    this.pendingActionOptions = [];
+    if (action === "raise" || action === "bet") {
+      this.pendingActionPlayer = player;
+      this.currentAction = action;
+  
+      const amountPromise = new Promise<number>((resolve) => {
+        this.pendingAmountResolver = resolve;
+        this.currentPlayerAwaitingAmount = player;
+        this.amountRange = {
+          min: 10, // temporary; real min set in bettingRound
+          max: player.stack + player.currentBet,
+        };
+      });
+  
+      console.log(`[ACTION] ${player.name} selected "${action}", awaiting amount...`);
+      const amount = await amountPromise;
+      this.lastReceivedAmount = amount;
+  
+      console.log(`[DEBUG] Received amount ${amount} from ${player.name} for ${action}`);
+      
+      // Only resolve the action now
+      const resolver = this.pendingActionResolver;
+      this.pendingActionResolver = null;
+      this.currentPlayerAwaitingAction = null;
+      this.pendingActionOptions = [];
+      resolver(action);
+  
+      // Clean up amount stuff
+      this.pendingAmountResolver = null;
+      this.currentPlayerAwaitingAmount = null;
+      this.pendingActionPlayer = null;
+    } else {
+      // Immediate actions (fold, call, check)
+      const resolver = this.pendingActionResolver;
+      this.pendingActionResolver = null;
+      this.currentPlayerAwaitingAction = null;
+      this.pendingActionOptions = [];
+      resolver(action);
+    }
   }
   
   public handleAmount(player: Player, amount: number) {
+    console.log(`[DEBUG] handleAmount called with ${amount} from ${player.name}`);
+  
     if (!this.pendingAmountResolver) {
       console.warn("No amount is currently pending.");
       return;
@@ -147,12 +187,26 @@ export class PokerGame {
       return;
     }
   
+    console.log(`[HANDLE AMOUNT] ${player.name} entered ${amount}`);
     this.pendingAmountResolver(amount);
-    this.pendingAmountResolver = null;
-    this.currentPlayerAwaitingAmount = null;
   }
 
-  startHand() {
+  private getCurrentTurnPlayer(): Player | null {
+    const total = this.players.length;
+    let index = (this.dealerIndex + 3) % total; // UTG = 3 seats after dealer
+  
+    for (let i = 0; i < total; i++) {
+      const player = this.players[index];
+      if (!player.folded && player.stack > 0) {
+        return player;
+      }
+      index = (index + 1) % total;
+    }
+  
+    return null;
+  }
+
+  public startHand() {
     this.dealerIndex = (this.dealerIndex + 1) % this.players.length;
     const rotated = [...this.players.slice(this.dealerIndex), ...this.players.slice(0, this.dealerIndex)];
     this.players = rotated;
@@ -170,6 +224,9 @@ export class PokerGame {
   
     console.log("Hole cards dealt.");
     this.postBlinds();
+
+    this.currentPlayerAwaitingAction = this.getCurrentTurnPlayer();
+    this.pendingActionOptions = ['fold', 'call', 'raise']; // adjust dynamically if needed
   }
 
   postBlinds() {
@@ -322,7 +379,7 @@ export class PokerGame {
     return this.players.filter(p => p.stack > 0);
   }
 
-  async bettingRound(roundName: string) {
+  public async bettingRound(roundName: string) {
     console.log(`\n--- ${roundName} Betting Round ---`);
 
     let activePlayers: Player[] = [];
@@ -549,7 +606,7 @@ console.log(`Pot is now ${this.pot} (Main pot: ${mainPot}, Side pot: ${sidePot})
 
   }
 
-  getGameState(showHoleCards: boolean = false) {
+  public getGameState(showHoleCards: boolean = false) {
     const state = {
       communityCards: this.communityCards.map(card => ({
         suit: card.suit,
@@ -561,21 +618,23 @@ console.log(`Pot is now ${this.pot} (Main pot: ${mainPot}, Side pot: ${sidePot})
         contenders: pot.contenders.map(p => p.name)
       })),
       players: this.players.map(player => ({
+        id: player.id,
         name: player.name,
         stack: player.stack,
         currentBet: player.currentBet,
         totalContributed: player.totalContributed,
         folded: player.folded,
         allIn: player.stack === 0,
-        holeCards: showHoleCards || player.stack === 0 || player.folded
+        holeCards: (showHoleCards || player.stack === 0 || player.folded)
           ? player.holeCards.map(card => ({ suit: card.suit, rank: card.rank }))
           : []
       })),
-      currentTurn: this.players.find(p => !p.folded && p.hasMadeDecisionThisRound === 0)?.name ?? null,
-      showdown: showHoleCards // 👈 this line makes the controller logic work
+      currentTurn: this.currentPlayerAwaitingAction?.name ?? null,
+      validActions: this.pendingActionOptions,
+      dealerIndex: this.dealerIndex,
+      showdown: showHoleCards
     };
   
     return state;
   }
-
 }
