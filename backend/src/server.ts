@@ -1,5 +1,4 @@
-import express from 'express';
-import type { Request, Response } from 'express';
+import express, { Request, Response, Router } from 'express';
 import cors from 'cors';
 import { PokerGame } from './POkerGame';
 import { PokerGameController } from './PokerGameController';
@@ -60,13 +59,56 @@ app.post('/amount', (req: Request, res: Response) => {
 
 app.post('/start', async (req: Request, res: Response) => {
   try {
+    console.log("🔥 /start called");
+
     game.startHand();
-    await game.bettingRound("Preflop");
-    res.send('Game started');
+
+    // Kick off async game loop
+    (async () => {
+      try {
+        await game.bettingRound("Preflop");
+
+        const remaining = game.getActivePlayers();
+        if (remaining.length <= 1) {
+          console.log("🏆 Only one player left — hand ends.");
+          return;
+        }
+
+        game.dealFlop();
+        await game.bettingRound("Flop");
+
+        game.dealTurn();
+        await game.bettingRound("Turn");
+
+        game.dealRiver();
+        await game.bettingRound("River");
+
+        game.showdown();
+      } catch (err) {
+        console.error("Game loop error:", err);
+      }
+    })();
+
+    // Send response immediately (non-blocking)
+    res.status(200).send({ success: true });
   } catch (err) {
     console.error('Game crashed:', err);
     res.status(500).send('Server crashed');
   }
+});
+
+app.get('/amount-range/:playerId', (req: express.Request, res: express.Response) => {
+  const playerId = req.params.playerId;
+  const player = game.getActivePlayers().find(p => p.id === playerId);
+
+  if (!player || game.getCurrentPlayerAwaitingAmount() !== player) {
+    return res.status(400).json({ ready: false });
+  }
+
+  return res.status(200).json({
+    ready: true,
+    range: game.getAmountRange(),
+  });
 });
 
 // --- Start Server ---

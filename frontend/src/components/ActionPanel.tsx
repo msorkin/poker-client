@@ -16,6 +16,18 @@ const ActionPanel: React.FC<ActionPanelProps> = ({ options, playerId, onActionSe
         alert('Enter a valid amount');
         return;
       }
+
+      // Step 1: Send the action first
+      await fetch('http://localhost:3001/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId, action }),
+      });
+
+      // Step 2: Give backend time to set up amount resolver
+      await new Promise(res => setTimeout(res, 200));
+
+      // Step 3: Now send the amount
       await fetch('http://localhost:3001/amount', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -28,6 +40,7 @@ const ActionPanel: React.FC<ActionPanelProps> = ({ options, playerId, onActionSe
         body: JSON.stringify({ playerId, action }),
       });
     }
+
     setAmount('');
     onActionSent();
   };

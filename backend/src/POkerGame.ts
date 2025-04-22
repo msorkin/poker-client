@@ -17,6 +17,9 @@ export class PokerGame {
   private currentAction: string = '';
   private lastReceivedAmount: number | null = null;
 
+  private lastLegalRaiseTo: number = 0;
+  private lastBetBeforeRaise: number = 0;
+
   private smallBlind!: number;
   private bigBlind!: number;
 
@@ -30,7 +33,30 @@ export class PokerGame {
     this.smallBlind = smallBlind;
     this.bigBlind = bigBlind;
   }
+
+  public getAmountRange(): { min: number; max: number } {
+    return this.amountRange;
+  }
   
+  public getCurrentPlayerAwaitingAmount(): Player | null {
+    return this.currentPlayerAwaitingAmount;
+  }
+  
+
+ /* private endHand() {
+    this.currentTurn = null;
+    this.communityCards = [];
+    this.pot += this.players.reduce((acc, p) => acc + p.currentBet, 0);
+    this.players.forEach((p) => {
+      p.currentBet = 0;
+      p.holeCards = null;
+      p.totalContributed = 0;
+      p.folded = false;
+      p.allIn = false;
+    });
+    console.log("🛑 Hand ended — pot awarded to remaining player.");
+  }*/
+
   private rebuildSidePots() {
     this.sidePots = [];
   
@@ -106,10 +132,13 @@ export class PokerGame {
   
   protected async requestPlayerAmount(player: Player, prompt: string, min: number, max: number): Promise<number> {
     console.log(`requestPlayerAmount called for ${player.name}: ${prompt} (min: ${min}, max: ${max})`);
+  
+    this.amountRange = { min, max };
+    console.log(`🧠 [requestPlayerAmount] amountRange set to:`, this.amountRange);
+  
     return new Promise((resolve) => {
       this.pendingAmountResolver = resolve;
       this.currentPlayerAwaitingAmount = player;
-      this.amountRange = { min, max };
     });
   }
   
@@ -130,37 +159,33 @@ export class PokerGame {
     }
   
     if (action === "raise" || action === "bet") {
+      console.log(`[ACTION] ${player.name} selected "${action}", awaiting amount...`);
+  
       this.pendingActionPlayer = player;
       this.currentAction = action;
-  
+      this.currentPlayerAwaitingAmount = player;
+
+      // 🧠 set up Promise that will be awaited elsewhere (like in bettingRound)
       const amountPromise = new Promise<number>((resolve) => {
         this.pendingAmountResolver = resolve;
-        this.currentPlayerAwaitingAmount = player;
-        this.amountRange = {
-          min: 10, // temporary; real min set in bettingRound
-          max: player.stack + player.currentBet,
-        };
       });
   
-      console.log(`[ACTION] ${player.name} selected "${action}", awaiting amount...`);
       const amount = await amountPromise;
       this.lastReceivedAmount = amount;
   
       console.log(`[DEBUG] Received amount ${amount} from ${player.name} for ${action}`);
-      
-      // Only resolve the action now
+  
       const resolver = this.pendingActionResolver;
       this.pendingActionResolver = null;
       this.currentPlayerAwaitingAction = null;
       this.pendingActionOptions = [];
       resolver(action);
   
-      // Clean up amount stuff
+      // Cleanup
       this.pendingAmountResolver = null;
       this.currentPlayerAwaitingAmount = null;
       this.pendingActionPlayer = null;
     } else {
-      // Immediate actions (fold, call, check)
       const resolver = this.pendingActionResolver;
       this.pendingActionResolver = null;
       this.currentPlayerAwaitingAction = null;
@@ -188,6 +213,7 @@ export class PokerGame {
     }
   
     console.log(`[HANDLE AMOUNT] ${player.name} entered ${amount}`);
+    console.log(`[DEBUG] Resolving amount for ${this.currentAction}`);
     this.pendingAmountResolver(amount);
   }
 
@@ -526,16 +552,25 @@ if (canAct.length <= 1) {
         
         console.log(`${player.name} bets ${amount}.`);
     } else if (action === 'raise') {
-        const minRaiseAmount = lastLegalRaiseTo - lastBetBeforeRaise;
-        const minRaiseTo = currentBet + minRaiseAmount;
-        const maxRaise = player.stack + player.currentBet;
+      const minRaiseAmount = Math.max(this.lastLegalRaiseTo - this.lastBetBeforeRaise, this.bigBlind);
+      const calculatedMinRaiseTo = player.currentBet + minRaiseAmount;
+      const minRaiseTo = Math.max(calculatedMinRaiseTo, this.bigBlind);
       
-        let raiseTo = await this.requestPlayerAmount(
-            player,
-            `Raise to (min ${minRaiseTo}${maxRaise < minRaiseTo ? ', max ' + maxRaise : ''}):`,
-            Math.min(minRaiseTo, maxRaise),
-            maxRaise
-          );
+      const maxRaise = Math.max(player.stack + player.currentBet, minRaiseTo);
+      
+      
+      console.log(`[RAISE LOGIC] lastLegalRaiseTo: ${lastLegalRaiseTo}`);
+      console.log(`[RAISE LOGIC] lastBetBeforeRaise: ${lastBetBeforeRaise}`);
+      console.log(`[RAISE LOGIC] currentBet: ${currentBet}`);
+      console.log(`[RAISE LOGIC] minRaiseTo: ${minRaiseTo}, maxRaise: ${maxRaise}`);
+      
+      console.log(`[RAISE LOGIC] Setting amountRange for ${player.name} — min: ${minRaiseTo}, max: ${maxRaise}`);
+      const raiseTo = await this.requestPlayerAmount(
+        player,
+        `Raise to (min ${minRaiseTo}, max ${maxRaise})`,
+        minRaiseTo,
+        maxRaise
+      );
       
         const raiseAmount = raiseTo - player.currentBet;
         player.stack -= raiseAmount;
@@ -630,7 +665,9 @@ console.log(`Pot is now ${this.pot} (Main pot: ${mainPot}, Side pot: ${sidePot})
           : []
       })),
       currentTurn: this.currentPlayerAwaitingAction?.name ?? null,
-      validActions: this.pendingActionOptions,
+      validActions: this.currentPlayerAwaitingAction
+        ? this.pendingActionOptions
+        : [],
       dealerIndex: this.dealerIndex,
       showdown: showHoleCards
     };
