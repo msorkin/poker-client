@@ -60,9 +60,16 @@ app.post('/amount', (req: Request, res: Response) => {
 
 app.post('/start', async (req: Request, res: Response) => {
   try {
+    console.log("🔥 /start called");
+
     game.startHand();
-    await game.bettingRound("Preflop");
-    res.send('Game started');
+
+    // Let the betting round run asynchronously — do not block the HTTP response
+    game.bettingRound("Preflop").catch((err) =>
+      console.error("Unhandled error during betting round:", err)
+    );
+
+    res.status(200).send({ success: true }); // respond immediately
   } catch (err) {
     console.error('Game crashed:', err);
     res.status(500).send('Server crashed');

@@ -630,7 +630,9 @@ console.log(`Pot is now ${this.pot} (Main pot: ${mainPot}, Side pot: ${sidePot})
           : []
       })),
       currentTurn: this.currentPlayerAwaitingAction?.name ?? null,
-      validActions: this.pendingActionOptions,
+      validActions: this.currentPlayerAwaitingAction
+        ? this.pendingActionOptions
+        : [],
       dealerIndex: this.dealerIndex,
       showdown: showHoleCards
     };

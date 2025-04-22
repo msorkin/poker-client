@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import CardDisplay from './components/CardDisplay';
 import ActionPanel from './components/ActionPanel';
 import PokerTable from './components/PokerTable';
+import './components/PokerTable.css';
+
 
 interface Card {
   suit: string;
@@ -30,76 +32,113 @@ interface GameState {
 }
 
 function App() {
+  const [playerId, setPlayerId] = useState<string | null>(localStorage.getItem("playerId"));
   const [gameState, setGameState] = useState<GameState | null>(null);
-  const [playerId, setPlayerId] = useState<string | null>(() => {
-    return localStorage.getItem("playerId");
-  });
   const [gameStarted, setGameStarted] = useState(false);
+
 
   const startGame = async () => {
     try {
-      const response = await fetch("http://localhost:3001/start", { method: "POST" });
-      if (!response.ok) throw new Error('Failed to start game');
+      console.log("🟢 Start Game button clicked");
+      console.log("👤 playerId at click time:", playerId);
+  
+      const currentPlayerId = playerId?.toString(); // make sure it's a string
+      if (!currentPlayerId) {
+        console.warn("🚫 No player ID found at game start.");
+        return;
+      }
+  
+      const response = await fetch("http://localhost:3001/start", {
+        method: "POST",
+      });
+      console.log("📡 /start response status:", response.status);
       
-      // Set game started immediately
-      setGameStarted(true);
-      
-      // Fetch updated state after a short delay
-      setTimeout(() => {
-        fetch(`http://localhost:3001/state/${playerId}`)
-          .then((res) => res.json())
-          .then((data) => setGameState(data));
-      }, 500);
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("❌ /start failed with status", response.status, "and body:", text);
+        throw new Error("Failed to start game");
+      }
+  
+      let tries = 0;
+      const maxTries = 10;
+      const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
+  
+      while (tries < maxTries) {
+        try {
+          console.log(`🕒 Waiting... try ${tries + 1}`);
+          await delay(300);
+          console.log(`🌐 Fetching game state for player ${currentPlayerId}`);
+          const updated = await fetch(`http://localhost:3001/state/${currentPlayerId}`);
+          const data = await updated.json();
+  
+          console.log(`🔎 Poll attempt ${tries + 1}:`, data);
+  
+          if (data.currentTurn) {
+            console.log("✅ Game started. Setting gameStarted = true");
+            setGameState(data);
+            setGameStarted(true);
+            return;
+          }
+        } catch (err) {
+          console.error("❌ Polling error:", err);
+        }
+  
+        tries++;
+      }
+  
+      console.warn("⚠️ Game start polling failed: currentTurn never set.");
     } catch (err) {
-      console.error('Error starting game:', err);
+      console.error("❌ Error starting game:", err);
     }
   };
 
   useEffect(() => {
+    console.log("🔁 useEffect triggered. playerId:", playerId, "gameStarted:", gameStarted);
     if (!playerId) return;
-    
+  
     fetch(`http://localhost:3001/state/${playerId}`)
       .then((res) => res.json())
-      .then((data) => setGameState(data));
-  }, [playerId]);
+      .then((data) => {
+        console.log("📦 Game state fetched in useEffect:", data);
+        setGameState(data);
+      })
+      .catch((err) => console.error("❌ Failed to fetch game state:", err));
+  }, [playerId, gameStarted]);
 
-  if (!playerId) {
-    return (
-      <div style={{ padding: 20 }}>
-        <h2>Select Your Player</h2>
-        <select
-          onChange={(e) => {
-            localStorage.setItem('playerId', e.target.value);
-            window.location.reload();
-          }}
-        >
-          <option value="">-- Choose a player --</option>
-          <option value="1">Alice</option>
-          <option value="2">Bob</option>
-          <option value="3">Charlie</option>
-          <option value="4">Diana</option>
-          <option value="5">Eddie</option>
-          <option value="6">Fiona</option>
-        </select>
-      </div>
-    );
-  }
+// 🔹 If no player selected, ask to pick one
+if (!playerId) {
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>Select Your Player</h2>
+      <select
+        onChange={(e) => {
+          const id = e.target.value;
+          if (id) {
+            localStorage.setItem("playerId", id);
+            setPlayerId(id);
+          }
+        }}
+      >
+        <option value="">-- Choose a player --</option>
+        <option value="1">Alice</option>
+        <option value="2">Bob</option>
+        <option value="3">Charlie</option>
+        <option value="4">Diana</option>
+        <option value="5">Eddie</option>
+        <option value="6">Fiona</option>
+      </select>
+    </div>
+  );
+}
 
-  if (!gameState) {
-    return (
-      <div>
-        <h2>Loading game...</h2>
-        <button
-          onClick={() => {
-            localStorage.removeItem("playerId");
-            window.location.reload();
-          }}
-        >
-          Reset Player
-        </button>
-      </div>
-    );
-  }
+// 🔹 If player is selected but game state hasn't loaded yet
+if (!gameState) {
+  return (
+    <div>
+      <h2>Loading game...</h2>
+    </div>
+  );
+}
 
   const numPlayers = gameState.players.length;
   const dealerIndex = gameState.dealerIndex;
