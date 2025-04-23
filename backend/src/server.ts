@@ -91,6 +91,7 @@ app.post('/start', async (req: Request, res: Response) => {
 
     // Send response immediately (non-blocking)
     res.status(200).send({ success: true });
+
   } catch (err) {
     console.error('Game crashed:', err);
     res.status(500).send('Server crashed');

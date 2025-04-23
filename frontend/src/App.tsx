@@ -111,6 +111,7 @@ function App() {
           localStorage.setItem("playerId", activePlayer.id);
           setPlayerId(activePlayer.id);
         }
+
       })
       .catch((err) => console.error("❌ Failed to fetch game state:", err));
   }, [playerId, gameStarted]);
