@@ -19,6 +19,8 @@ export class PokerGame {
 
   private lastLegalRaiseTo: number = 0;
   private lastBetBeforeRaise: number = 0;
+  private lastRaiseTo: number = 0;
+  private lastBetAmount: number = 0;
 
   private smallBlind!: number;
   private bigBlind!: number;
@@ -165,26 +167,25 @@ export class PokerGame {
       this.currentAction = action;
       this.currentPlayerAwaitingAmount = player;
 
-      // 🧠 set up Promise that will be awaited elsewhere (like in bettingRound)
-      const amountPromise = new Promise<number>((resolve) => {
-        this.pendingAmountResolver = resolve;
-      });
-  
-      const amount = await amountPromise;
-      this.lastReceivedAmount = amount;
-  
-      console.log(`[DEBUG] Received amount ${amount} from ${player.name} for ${action}`);
-  
+      // Calculate the amount range
+      if (action === "raise") {
+        const minRaiseAmount = Math.max(this.lastLegalRaiseTo - this.lastBetBeforeRaise, this.bigBlind);
+        const calculatedMinRaiseTo = player.currentBet + minRaiseAmount;
+        const minRaiseTo = Math.max(calculatedMinRaiseTo, this.bigBlind);
+        const maxRaise = Math.max(player.stack + player.currentBet, minRaiseTo);
+        
+        console.log(`[RAISE LOGIC] Setting amountRange for ${player.name} — min: ${minRaiseTo}, max: ${maxRaise}`);
+        this.amountRange = { min: minRaiseTo, max: maxRaise };
+      } else if (action === "bet") {
+        this.amountRange = { min: this.bigBlind, max: player.stack };
+      }
+
+      // Resolve the action immediately
       const resolver = this.pendingActionResolver;
       this.pendingActionResolver = null;
       this.currentPlayerAwaitingAction = null;
       this.pendingActionOptions = [];
       resolver(action);
-  
-      // Cleanup
-      this.pendingAmountResolver = null;
-      this.currentPlayerAwaitingAmount = null;
-      this.pendingActionPlayer = null;
     } else {
       const resolver = this.pendingActionResolver;
       this.pendingActionResolver = null;
@@ -421,12 +422,12 @@ export class PokerGame {
       return;
     }
 
-canAct = activePlayers.filter(p => p.stack > 0);
+    canAct = activePlayers.filter(p => p.stack > 0);
 
-if (canAct.length <= 1) {
-  console.log("All players are all-in or only one player can act. Skipping betting round.");
-  return;
-}
+    if (canAct.length <= 1) {
+      console.log("All players are all-in or only one player can act. Skipping betting round.");
+      return;
+    }
   
     // Reset decision flags
     this.players.forEach(p => (p.hasMadeDecisionThisRound = 0));
@@ -444,10 +445,11 @@ if (canAct.length <= 1) {
     // Start with big blind as aggressor (preflop)
     let lastAggressor: Player | null = roundName === 'Preflop' ? this.players[(this.dealerIndex + 2) % this.players.length] : null;
     
-    let lastBetBeforeRaise = 0;
-    let lastRaiseTo = 0;
-    let lastLegalRaiseTo = 0;
-    let lastLegalAggressor: Player | null = null;
+    // Initialize raise tracking variables
+    this.lastBetBeforeRaise = roundName === 'Preflop' ? this.bigBlind : 0;
+    this.lastLegalRaiseTo = roundName === 'Preflop' ? this.bigBlind * 2 : 0;
+    this.lastRaiseTo = roundName === 'Preflop' ? this.bigBlind * 2 : 0;
+    this.lastBetAmount = roundName === 'Preflop' ? this.bigBlind : 0;
 
     // Current player index
     let currentIndex = 0;
@@ -456,6 +458,7 @@ if (canAct.length <= 1) {
     let roundComplete = false;
     
     let wasShortRaise = false;
+    let lastLegalAggressor: Player | null = null;
     
     while (!roundComplete) {
       let player = bettingOrder[currentIndex % bettingOrder.length];
@@ -537,9 +540,9 @@ if (canAct.length <= 1) {
         player.totalContributed += amount;
         this.pot += amount;
   
-        lastBetBeforeRaise = 0;
-        lastRaiseTo = amount;
-        lastLegalRaiseTo = amount;
+        this.lastBetBeforeRaise = 0;
+        this.lastRaiseTo = amount;
+        this.lastLegalRaiseTo = amount;
         currentBet = amount;
         lastAggressor = player;
         isAggressiveAction = true;
@@ -551,27 +554,26 @@ if (canAct.length <= 1) {
         });
         
         console.log(`${player.name} bets ${amount}.`);
-    } else if (action === 'raise') {
-      const minRaiseAmount = Math.max(this.lastLegalRaiseTo - this.lastBetBeforeRaise, this.bigBlind);
-      const calculatedMinRaiseTo = player.currentBet + minRaiseAmount;
-      const minRaiseTo = Math.max(calculatedMinRaiseTo, this.bigBlind);
-      
-      const maxRaise = Math.max(player.stack + player.currentBet, minRaiseTo);
-      
-      
-      console.log(`[RAISE LOGIC] lastLegalRaiseTo: ${lastLegalRaiseTo}`);
-      console.log(`[RAISE LOGIC] lastBetBeforeRaise: ${lastBetBeforeRaise}`);
-      console.log(`[RAISE LOGIC] currentBet: ${currentBet}`);
-      console.log(`[RAISE LOGIC] minRaiseTo: ${minRaiseTo}, maxRaise: ${maxRaise}`);
-      
-      console.log(`[RAISE LOGIC] Setting amountRange for ${player.name} — min: ${minRaiseTo}, max: ${maxRaise}`);
-      const raiseTo = await this.requestPlayerAmount(
-        player,
-        `Raise to (min ${minRaiseTo}, max ${maxRaise})`,
-        minRaiseTo,
-        maxRaise
-      );
-      
+      } else if (action === 'raise') {
+        const minRaiseAmount = Math.max(this.lastLegalRaiseTo - this.lastBetBeforeRaise, this.bigBlind);
+        const calculatedMinRaiseTo = player.currentBet + minRaiseAmount;
+        const minRaiseTo = Math.max(calculatedMinRaiseTo, this.bigBlind);
+        
+        const maxRaise = Math.max(player.stack + player.currentBet, minRaiseTo);
+        
+        console.log(`[RAISE LOGIC] lastLegalRaiseTo: ${this.lastLegalRaiseTo}`);
+        console.log(`[RAISE LOGIC] lastBetBeforeRaise: ${this.lastBetBeforeRaise}`);
+        console.log(`[RAISE LOGIC] currentBet: ${currentBet}`);
+        console.log(`[RAISE LOGIC] minRaiseTo: ${minRaiseTo}, maxRaise: ${maxRaise}`);
+        
+        // Request the raise amount
+        const raiseTo = await this.requestPlayerAmount(
+          player,
+          `Raise to (min ${minRaiseTo}, max ${maxRaise})`,
+          minRaiseTo,
+          maxRaise
+        );
+        
         const raiseAmount = raiseTo - player.currentBet;
         player.stack -= raiseAmount;
         player.currentBet += raiseAmount;
@@ -589,14 +591,14 @@ if (canAct.length <= 1) {
       
         if (!wasShortRaise) {
           lastLegalAggressor = player;
-          lastLegalRaiseTo = raiseTo;
-          lastBetBeforeRaise = currentBet;
+          this.lastLegalRaiseTo = raiseTo;
+          this.lastBetBeforeRaise = currentBet;
         }
       
         lastAggressor = player;
-        lastRaiseTo = raiseTo;
+        this.lastRaiseTo = raiseTo;
         currentBet = raiseTo;
-        lastBetAmount = currentBet;
+        this.lastBetAmount = currentBet;
         isAggressiveAction = true;
       
         // Reset decision flags for other players
