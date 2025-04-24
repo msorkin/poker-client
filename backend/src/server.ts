@@ -17,6 +17,9 @@ const players: Player[] = [
 const game = new PokerGame(players, 5, 10);
 const controller = new PokerGameController(game, 7);
 
+// Add this where other variables are defined
+const games = new Map<string, PokerGame>();
+
 // --- Create Server ---
 const app = express();
 app.use(cors());
@@ -68,7 +71,31 @@ app.post('/start', async (req: Request, res: Response) => {
       try {
         await game.bettingRound("Preflop");
 
-        const remaining = game.getActivePlayers();
+        let remaining = game.getActivePlayers();
+        if (remaining.length <= 1) {
+          console.log("🏆 Only one player left — hand ends.");
+          return;
+        }
+
+        game.dealFlop();
+        await game.bettingRound("Flop");
+
+        game.dealTurn();
+        await game.bettingRound("Turn");
+
+        game.dealRiver();
+        await game.bettingRound("River");
+
+        game.showdown();
+
+        // Wait a bit to show the showdown
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
+        // Start next hand
+        game.startHand();
+        await game.bettingRound("Preflop");
+
+        remaining = game.getActivePlayers();
         if (remaining.length <= 1) {
           console.log("🏆 Only one player left — hand ends.");
           return;
@@ -99,16 +126,64 @@ app.post('/start', async (req: Request, res: Response) => {
 });
 
 app.get('/amount-range/:playerId', (req: express.Request, res: express.Response) => {
-  const playerId = req.params.playerId;
-  const player = game.getActivePlayers().find(p => p.id === playerId);
-
-  if (!player || game.getCurrentPlayerAwaitingAmount() !== player) {
-    return res.status(400).json({ ready: false });
+  const { playerId } = req.params;
+  
+  const gameState = game.getGameState();
+  const player = gameState.players.find(p => p.id === playerId);
+  if (!player) {
+    return res.json({ ready: false });
   }
 
-  return res.status(200).json({
+  // Get all bets and sort them in descending order
+  const bets = gameState.players
+    .map(p => ({ 
+      bet: p.currentBet || 0,
+      stack: p.stack,
+      totalChips: (p.currentBet || 0) + p.stack,
+      isAllIn: p.stack === 0 && (p.currentBet || 0) > 0
+    }))
+    .sort((a, b) => b.bet - a.bet);
+
+  const highestBet = Math.max(...bets.map(b => b.bet));
+
+  // Special case for initial preflop raise (when highest bet is the BB)
+  if (highestBet === 10 && bets.find(b => b.bet === 5)) {
+    return res.json({
+      ready: true,
+      range: {
+        min: Math.min(20, player.stack),
+        max: player.stack
+      }
+    });
+  }
+
+  // Find the last valid raise amount
+  let lastValidRaiseAmount = 0;
+
+  // If there's a bet higher than the big blind, calculate the raise amount
+  if (highestBet > 10) {
+    // Find the bet that was raised over, ignoring all-in bets
+    const validBets = bets
+      .filter(b => !b.isAllIn && b.bet > 0 && b.bet < highestBet)
+      .sort((a, b) => b.bet - a.bet);
+      
+    // If no valid previous bets found (except all-ins), use the big blind
+    const previousBet = validBets[0]?.bet || 10;
+    lastValidRaiseAmount = highestBet - previousBet;
+  } else {
+    // Default to 2x BB for first raise
+    lastValidRaiseAmount = 20;
+  }
+
+  // For a raise, we need to raise by at least the same amount as the last raise
+  const minRaise = highestBet + lastValidRaiseAmount;
+
+  return res.json({
     ready: true,
-    range: game.getAmountRange(),
+    range: {
+      min: Math.min(minRaise, player.stack),
+      max: player.stack
+    }
   });
 });
 

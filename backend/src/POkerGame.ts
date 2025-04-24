@@ -25,6 +25,8 @@ export class PokerGame {
   private smallBlind!: number;
   private bigBlind!: number;
 
+  private isShowdown: boolean = false;
+
   constructor(players: Player[], smallBlind: number = 5, bigBlind: number = 10) {
     if (players.length < 2 || players.length > 6) {
       throw new Error("This version supports between 2 and 6 players.");
@@ -169,12 +171,21 @@ export class PokerGame {
 
       // Calculate the amount range
       if (action === "raise") {
-        const minRaiseAmount = Math.max(this.lastLegalRaiseTo - this.lastBetBeforeRaise, this.bigBlind);
-        const calculatedMinRaiseTo = player.currentBet + minRaiseAmount;
-        const minRaiseTo = Math.max(calculatedMinRaiseTo, this.bigBlind);
-        const maxRaise = Math.max(player.stack + player.currentBet, minRaiseTo);
+        // Calculate minimum raise amount
+        const minRaiseAmount = Math.max(
+          this.lastLegalRaiseTo - this.lastBetBeforeRaise,
+          this.bigBlind
+        );
+        const minRaiseTo = player.currentBet + minRaiseAmount;
+        const maxRaise = player.stack + player.currentBet;
         
         console.log(`[RAISE LOGIC] Setting amountRange for ${player.name} — min: ${minRaiseTo}, max: ${maxRaise}`);
+        console.log(`[RAISE LOGIC] lastLegalRaiseTo: ${this.lastLegalRaiseTo}`);
+        console.log(`[RAISE LOGIC] lastBetBeforeRaise: ${this.lastBetBeforeRaise}`);
+        console.log(`[RAISE LOGIC] currentBet: ${this.currentBet}`);
+        console.log(`[RAISE LOGIC] minRaiseAmount: ${minRaiseAmount}`);
+        console.log(`[RAISE LOGIC] minRaiseTo: ${minRaiseTo}, maxRaise: ${maxRaise}`);
+        
         this.amountRange = { min: minRaiseTo, max: maxRaise };
       } else if (action === "bet") {
         this.amountRange = { min: this.bigBlind, max: player.stack };
@@ -207,9 +218,28 @@ export class PokerGame {
       console.warn(`It's not ${player.name}'s turn.`);
       return;
     }
+
+    // Calculate minimum raise amount for validation
+    let minAmount = this.amountRange.min;
+    let maxAmount = this.amountRange.max;
+
+    if (this.currentAction === "raise") {
+      // For preflop, the minimum raise is to 2x the big blind
+      if (this.communityCards.length === 0) {
+        minAmount = this.bigBlind * 2;
+      } else {
+        // For other streets, minimum raise is the last raise amount or big blind, whichever is larger
+        const minRaiseAmount = Math.max(
+          this.lastLegalRaiseTo - this.lastBetBeforeRaise,
+          this.bigBlind
+        );
+        minAmount = player.currentBet + minRaiseAmount;
+      }
+      console.log(`[RAISE VALIDATION] Minimum raise to: ${minAmount}`);
+    }
   
-    if (amount < this.amountRange.min || amount > this.amountRange.max) {
-      console.warn(`Invalid amount: ${amount}. Must be between ${this.amountRange.min} and ${this.amountRange.max}`);
+    if (amount < minAmount || amount > maxAmount) {
+      console.warn(`Invalid amount: ${amount}. Must be between ${minAmount} and ${maxAmount}`);
       return;
     }
   
@@ -367,6 +397,9 @@ export class PokerGame {
     this.pot = 0;
     this.players = this.players.filter(p => p.stack > 0);
     this.displayChipCounts();
+
+    // Set showdown flag to true
+    this.isShowdown = true;
   }
 
   displayChipCounts() {
@@ -662,7 +695,7 @@ console.log(`Pot is now ${this.pot} (Main pot: ${mainPot}, Side pot: ${sidePot})
         totalContributed: player.totalContributed,
         folded: player.folded,
         allIn: player.stack === 0,
-        holeCards: (showHoleCards || player.stack === 0 || player.folded)
+        holeCards: (this.isShowdown || player.stack === 0 || player.folded)
           ? player.holeCards.map(card => ({ suit: card.suit, rank: card.rank }))
           : []
       })),
@@ -671,7 +704,7 @@ console.log(`Pot is now ${this.pot} (Main pot: ${mainPot}, Side pot: ${sidePot})
         ? this.pendingActionOptions
         : [],
       dealerIndex: this.dealerIndex,
-      showdown: showHoleCards
+      showdown: this.isShowdown
     };
   
     return state;
