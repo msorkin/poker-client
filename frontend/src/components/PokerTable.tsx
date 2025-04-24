@@ -1,5 +1,6 @@
 import React from 'react';
 import './PokerTable.css';
+import CardDisplay from './CardDisplay';
 
 interface Card {
   suit: string;
@@ -23,6 +24,7 @@ interface PokerTableProps {
   dealerIndex: number;
   smallBlindIndex: number;
   bigBlindIndex: number;
+  showdown: boolean;
 }
 
 const positions = [
@@ -40,6 +42,7 @@ const PokerTable: React.FC<PokerTableProps> = ({
   dealerIndex,
   smallBlindIndex,
   bigBlindIndex,
+  showdown,
 }) => {
   const radius = 250; // distance from center to player
   const centerX = 300;
@@ -73,6 +76,16 @@ const PokerTable: React.FC<PokerTableProps> = ({
           {index === dealerIndex && <div className="badge">D</div>}
           {index === smallBlindIndex && <div className="badge">SB</div>}
           {index === bigBlindIndex && <div className="badge">BB</div>}
+          {showdown && !player.folded && player.holeCards && (
+            <div style={{ 
+              marginTop: '10px',
+              backgroundColor: 'rgba(0,0,0,0.3)',
+              padding: '5px',
+              borderRadius: '4px'
+            }}>
+              <CardDisplay cards={player.holeCards} />
+            </div>
+          )}
         </div>
       ))}
     </div>

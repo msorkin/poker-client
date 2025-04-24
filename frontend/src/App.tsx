@@ -28,7 +28,8 @@ interface GameState {
   players: PlayerState[];
   currentTurn: string | null;
   dealerIndex: number;
-  validActions: string[]; // ✅ add this line
+  validActions: string[];
+  showdown: boolean;
 }
 
 function App() {
@@ -116,31 +117,55 @@ function App() {
       .catch((err) => console.error("❌ Failed to fetch game state:", err));
   }, [playerId, gameStarted]);
 
-  // Second useeffect for seperate polling for game state - this is added so we can switch to the player whose turn it is
+  // Second useeffect for separate polling for game state
   useEffect(() => {
     if (!gameStarted || !playerId) return;
   
-    const interval = setInterval(() => {
-      fetch(`http://localhost:3001/state/${playerId}`)
-        .then((res) => res.json())
-        .then((data) => {
-          console.log("📦 [poll] game state:", data);
-          setGameState(data);
+    const pollGameState = async () => {
+      try {
+        const response = await fetch(`http://localhost:3001/state/${playerId}`);
+        const data = await response.json();
+        console.log("📦 [poll] game state:", data);
+        
+        // Always update game state first
+        setGameState(data);
   
-          const currentTurnName = data.currentTurn;
-          const activePlayer = data.players.find((p: PlayerState) => p.name === currentTurnName);
+        // Then handle player switching if needed
+        const currentTurnName = data.currentTurn;
+        const activePlayer = data.players.find((p: PlayerState) => p.name === currentTurnName);
   
-          if (activePlayer && activePlayer.id !== playerId) {
-            console.log("🔄 [poll] switching to:", activePlayer.name);
-            localStorage.setItem("playerId", activePlayer.id);
-            setPlayerId(activePlayer.id);
-          }
-        })
-        .catch((err) => console.error("❌ [poll] Failed:", err));
-    }, 1000); // 1s polling
+        if (activePlayer && activePlayer.id !== playerId) {
+          console.log("🔄 [poll] switching to:", activePlayer.name);
+          localStorage.setItem("playerId", activePlayer.id);
+          setPlayerId(activePlayer.id);
+        }
+      } catch (err) {
+        console.error("❌ [poll] Failed:", err);
+      }
+    };
+
+    // Initial poll immediately
+    pollGameState();
   
-    return () => clearInterval(interval); // cleanup
+    // Then set up interval
+    const interval = setInterval(pollGameState, 500); // Poll every 500ms instead of 1000ms
+  
+    return () => clearInterval(interval);
   }, [gameStarted, playerId]);
+
+  const handleActionSent = async () => {
+    // Wait a moment for the server to process the action
+    await new Promise(resolve => setTimeout(resolve, 200));
+    
+    // Then force a state refresh
+    try {
+      const response = await fetch(`http://localhost:3001/state/${playerId}`);
+      const data = await response.json();
+      setGameState(data);
+    } catch (err) {
+      console.error("Failed to refresh state after action:", err);
+    }
+  };
 
 // 🔹 If no player selected, ask to pick one
 if (!playerId) {
@@ -211,6 +236,7 @@ if (!gameState) {
         dealerIndex={dealerIndex}
         smallBlindIndex={smallBlindIndex}
         bigBlindIndex={bigBlindIndex}
+        showdown={gameState.showdown}
       />
 
       <h3>Pot: {gameState.pot}</h3>
@@ -228,20 +254,46 @@ if (!gameState) {
       )}
 
       <h3>Current Turn: {gameState.currentTurn || 'N/A'}</h3>
-      {gameState.currentTurn ===
-      gameState.players.find((p: PlayerState) => p.id.toString() === playerId)?.name && (
-     <ActionPanel
-     options={gameState.validActions || []}
-      playerId={playerId}
-     onActionSent={() => {
-      setTimeout(() => {
-        fetch(`http://localhost:3001/state/${playerId}`)
-          .then((res) => res.json())
-          .then((data) => setGameState(data));
-      }, 500);
-    }}
-  />
-)}
+      
+      {!gameState.showdown && gameState.currentTurn ===
+        gameState.players.find((p: PlayerState) => p.id.toString() === playerId)?.name && (
+        <ActionPanel
+          options={gameState.validActions || []}
+          playerId={playerId}
+          playerStack={gameState.players.find((p: PlayerState) => p.id.toString() === playerId)?.stack || 0}
+          bigBlind={10}
+          onActionSent={handleActionSent}
+        />
+      )}
+
+      {gameState.showdown && (
+        <div style={{
+          marginTop: 20,
+          padding: 20,
+          backgroundColor: '#2a2a2a',
+          borderRadius: 8,
+          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+        }}>
+          <h3 style={{ color: '#4CAF50', marginTop: 0 }}>🏆 Showdown!</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {gameState.players
+              .filter(p => !p.folded)
+              .map(player => (
+                <div key={player.id} style={{ 
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: 10,
+                  backgroundColor: '#3a3a3a',
+                  borderRadius: 4
+                }}>
+                  <strong>{player.name}:</strong>
+                  <CardDisplay cards={player.holeCards || []} />
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

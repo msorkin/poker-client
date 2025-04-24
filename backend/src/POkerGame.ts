@@ -514,12 +514,12 @@ export class PokerGame {
       } else {
         options.push('fold');
         options.push('call');
-        if (
-            player.stack > toCall &&
-            !(wasShortRaise && lastLegalAggressor === player)
-          ) {
-            options.push('raise');
-          }
+        if (player.stack > toCall) {
+          // Allow raise if player has enough chips and either:
+          // 1. There was no short raise, or
+          // 2. There was a valid raise after the short raise
+          options.push('raise');
+        }
       }
   
       console.log(`Options: ${options.join(', ')}`);
@@ -578,6 +578,8 @@ export class PokerGame {
         this.lastLegalRaiseTo = amount;
         currentBet = amount;
         lastAggressor = player;
+        lastLegalAggressor = player;
+        wasShortRaise = false;
         isAggressiveAction = true;
         
         // Reset decisions for all other players
@@ -623,9 +625,14 @@ export class PokerGame {
         wasShortRaise = (raiseTo - currentBet) < minRaiseAmount;
       
         if (!wasShortRaise) {
-          lastLegalAggressor = player;
+          // If this is a valid raise, clear all short raise tracking
+          wasShortRaise = false;
+          lastLegalAggressor = null;
           this.lastLegalRaiseTo = raiseTo;
           this.lastBetBeforeRaise = currentBet;
+        } else {
+          // Only set the last legal aggressor if this was a short raise
+          lastLegalAggressor = player;
         }
       
         lastAggressor = player;
@@ -663,17 +670,16 @@ export class PokerGame {
 
     // Reset player bets for next round
     this.players.forEach(p => {
-    p.currentBet = 0;
-    p.hasMadeDecisionThisRound = 0;
-});
+      p.currentBet = 0;
+      p.hasMadeDecisionThisRound = 0;
+    });
 
-this.rebuildSidePots();
-const mainPot = this.sidePots.length > 0 ? this.sidePots[0].amount : this.pot;
-const sidePot = this.sidePots.length > 1 
-  ? this.sidePots.slice(1).reduce((sum, pot) => sum + pot.amount, 0) 
-  : 0;
-console.log(`Pot is now ${this.pot} (Main pot: ${mainPot}, Side pot: ${sidePot})`);
-
+    this.rebuildSidePots();
+    const mainPot = this.sidePots.length > 0 ? this.sidePots[0].amount : this.pot;
+    const sidePot = this.sidePots.length > 1 
+      ? this.sidePots.slice(1).reduce((sum, pot) => sum + pot.amount, 0) 
+      : 0;
+    console.log(`Pot is now ${this.pot} (Main pot: ${mainPot}, Side pot: ${sidePot})`);
   }
 
   public getGameState(showHoleCards: boolean = false) {

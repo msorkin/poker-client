@@ -140,11 +140,13 @@ app.get('/amount-range/:playerId', (req: express.Request, res: express.Response)
       bet: p.currentBet || 0,
       stack: p.stack,
       totalChips: (p.currentBet || 0) + p.stack,
-      isAllIn: p.stack === 0 && (p.currentBet || 0) > 0
+      isAllIn: p.stack === 0 && (p.currentBet || 0) > 0,
+      name: p.name // Add name for debugging
     }))
     .sort((a, b) => b.bet - a.bet);
 
   const highestBet = Math.max(...bets.map(b => b.bet));
+  console.log(`[AMOUNT RANGE] Current bets:`, bets.map(b => `${b.name}: ${b.bet}${b.isAllIn ? ' (all-in)' : ''}`));
 
   // Special case for initial preflop raise (when highest bet is the BB)
   if (highestBet === 10 && bets.find(b => b.bet === 5)) {
@@ -157,31 +159,52 @@ app.get('/amount-range/:playerId', (req: express.Request, res: express.Response)
     });
   }
 
-  // Find the last valid raise amount
+  // Find the last valid raise amount by looking at non-all-in bets
   let lastValidRaiseAmount = 0;
+  let lastValidBet = 10; // Default to BB
 
-  // If there's a bet higher than the big blind, calculate the raise amount
-  if (highestBet > 10) {
-    // Find the bet that was raised over, ignoring all-in bets
-    const validBets = bets
-      .filter(b => !b.isAllIn && b.bet > 0 && b.bet < highestBet)
-      .sort((a, b) => b.bet - a.bet);
-      
-    // If no valid previous bets found (except all-ins), use the big blind
-    const previousBet = validBets[0]?.bet || 10;
-    lastValidRaiseAmount = highestBet - previousBet;
+  // Get all non-all-in bets in descending order
+  const validBets = bets
+    .filter(b => !b.isAllIn)
+    .sort((a, b) => b.bet - a.bet);
+
+  // Find the last actual raise (not just a call)
+  let lastRaiseBets = validBets.filter(b => b.bet > 10); // bets higher than BB
+  if (lastRaiseBets.length >= 2) {
+    // Find the two highest different bet amounts
+    let uniqueBets = Array.from(new Set(lastRaiseBets.map(b => b.bet)))
+      .sort((a, b) => b - a);
+    if (uniqueBets.length >= 2) {
+      lastValidRaiseAmount = uniqueBets[0] - uniqueBets[1];
+      lastValidBet = uniqueBets[0];
+    } else {
+      // If everyone just called the highest bet
+      lastValidRaiseAmount = uniqueBets[0] - 10; // difference from BB
+      lastValidBet = uniqueBets[0];
+    }
+  } else if (lastRaiseBets.length === 1) {
+    // Only one raise
+    lastValidRaiseAmount = lastRaiseBets[0].bet - 10;
+    lastValidBet = lastRaiseBets[0].bet;
   } else {
-    // Default to 2x BB for first raise
-    lastValidRaiseAmount = 20;
+    // No raises yet
+    lastValidRaiseAmount = 10; // BB size
+    lastValidBet = 10;
   }
 
-  // For a raise, we need to raise by at least the same amount as the last raise
-  const minRaise = highestBet + lastValidRaiseAmount;
+  // Ensure minimum raise is at least BB size
+  lastValidRaiseAmount = Math.max(lastValidRaiseAmount, 10);
+
+  // For a raise, we need to raise by at least the same amount as the last valid raise
+  const minRaise = lastValidBet + lastValidRaiseAmount;
+
+  console.log(`[AMOUNT RANGE] Last valid bet: ${lastValidBet}, Last valid raise: ${lastValidRaiseAmount}, Highest bet: ${highestBet}, Min raise: ${minRaise}`);
 
   return res.json({
     ready: true,
     range: {
-      min: Math.min(minRaise, player.stack),
+      // Player must at least match the highest bet if it's more than the minimum raise
+      min: Math.max(Math.min(minRaise, player.stack), highestBet),
       max: player.stack
     }
   });

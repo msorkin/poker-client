@@ -4,37 +4,46 @@ interface ActionPanelProps {
   options: string[];
   playerId: string;
   onActionSent: () => void;
+  playerStack: number;
+  bigBlind: number;
 }
 
-const ActionPanel: React.FC<ActionPanelProps> = ({ options, playerId, onActionSent }) => {
-  // Start with reasonable defaults until we get real values
-  const [amountRange, setAmountRange] = useState<{ min: number; max: number }>({ min: 20, max: 1000 });
-  const [amount, setAmount] = useState<number>(20);
+const ActionPanel: React.FC<ActionPanelProps> = ({ options, playerId, onActionSent, playerStack, bigBlind }) => {
+  const [amountRange, setAmountRange] = useState<{ min: number; max: number }>({ 
+    min: bigBlind,
+    max: playerStack 
+  });
+  const [amount, setAmount] = useState<number>(bigBlind);
 
-  // Only fetch the range when raise becomes an option
   useEffect(() => {
     const fetchAmountRange = async () => {
       try {
         const response = await fetch(`http://localhost:3001/amount-range/${playerId}`);
         const data = await response.json();
-        if (data.ready && data.range.min > 0 && data.range.max > 0) {
-          setAmountRange(data.range);
-          setAmount(prev => prev < data.range.min ? data.range.min : prev);
+        if (data.ready && data.range) {
+          const newRange = {
+            min: data.range.min,
+            max: Math.min(data.range.max, playerStack)
+          };
+          setAmountRange(newRange);
+          setAmount(current => {
+            if (current < newRange.min) return newRange.min;
+            if (current > newRange.max) return newRange.max;
+            return current;
+          });
         }
       } catch (error) {
         console.error('Error fetching amount range:', error);
       }
     };
 
-    // Only fetch when raise is an option
-    if (options.includes('raise')) {
+    if (options.includes('raise') || options.includes('bet')) {
       fetchAmountRange();
     }
-  }, [options, playerId]); // Only re-run when options or playerId changes
+  }, [options, playerId, playerStack]);
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = parseInt(e.target.value);
-    // Ensure the value stays within the valid range
     const clampedValue = Math.min(Math.max(newValue, amountRange.min), amountRange.max);
     setAmount(clampedValue);
   };
@@ -44,24 +53,20 @@ const ActionPanel: React.FC<ActionPanelProps> = ({ options, playerId, onActionSe
     if (isNaN(newValue)) {
       newValue = amountRange.min;
     }
-    // Ensure the value stays within the valid range
     const clampedValue = Math.min(Math.max(newValue, amountRange.min), amountRange.max);
     setAmount(clampedValue);
   };
 
   const sendAction = async (action: string) => {
-    if (action === 'raise') {
-      // First send the action
+    if (action === 'raise' || action === 'bet') {
       await fetch('http://localhost:3001/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playerId, action }),
       });
 
-      // Give backend time to set up amount resolver
       await new Promise(res => setTimeout(res, 200));
 
-      // Then send the amount
       await fetch('http://localhost:3001/amount', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -170,7 +175,7 @@ const ActionPanel: React.FC<ActionPanelProps> = ({ options, playerId, onActionSe
   return (
     <div style={{ marginTop: 20 }}>
       <h3>Your Move</h3>
-      {options.includes('raise') && (
+      {(options.includes('raise') || options.includes('bet')) && (
         <div style={sliderStyles.container}>
           <div style={sliderStyles.inputContainer}>
             <input
