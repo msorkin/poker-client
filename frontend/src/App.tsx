@@ -36,6 +36,8 @@ function App() {
   const [playerId, setPlayerId] = useState<string | null>(localStorage.getItem("playerId"));
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [gameStarted, setGameStarted] = useState(false);
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string>('1');
+  const [error, setError] = useState<string | null>(null);
 
 
   const startGame = async () => {
@@ -167,6 +169,18 @@ function App() {
     }
   };
 
+  // Add function to start next hand
+  const startNextHand = async () => {
+    try {
+      await fetch('http://localhost:3001/next-hand', {
+        method: 'POST',
+      });
+    } catch (err) {
+      setError('Failed to start next hand');
+      console.error('Failed to start next hand:', err);
+    }
+  };
+
 // 🔹 If no player selected, ask to pick one
 if (!playerId) {
   return (
@@ -226,10 +240,6 @@ if (!gameState) {
     🔄 Change Player
   </button>
 
-      <h2>Community Cards:</h2>
-      <CardDisplay cards={gameState.communityCards} />
-
-      <h2>Players:</h2>
       <PokerTable
         players={gameState.players}
         currentTurn={gameState.currentTurn}
@@ -237,21 +247,10 @@ if (!gameState) {
         smallBlindIndex={smallBlindIndex}
         bigBlindIndex={bigBlindIndex}
         showdown={gameState.showdown}
+        communityCards={gameState.communityCards}
+        pot={gameState.pot}
+        sidePots={gameState.sidePots}
       />
-
-      <h3>Pot: {gameState.pot}</h3>
-      {gameState.sidePots.length > 0 && (
-        <div>
-          <h4>Side Pots:</h4>
-          <ul>
-            {gameState.sidePots.map((pot, i) => (
-              <li key={i}>
-                {pot.amount} chips — Contenders: {pot.contenders.join(', ')}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
 
       <h3>Current Turn: {gameState.currentTurn || 'N/A'}</h3>
       
@@ -292,6 +291,21 @@ if (!gameState) {
                 </div>
               ))}
           </div>
+          {/* Add Next Hand button that only shows during showdown */}
+          <button 
+            onClick={startNextHand}
+            style={{ 
+              marginTop: '10px',
+              backgroundColor: '#4CAF50',
+              color: 'white',
+              padding: '10px 20px',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            Next Hand ▶
+          </button>
         </div>
       )}
     </div>

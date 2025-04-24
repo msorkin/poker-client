@@ -87,15 +87,35 @@ app.post('/start', async (req: Request, res: Response) => {
         await game.bettingRound("River");
 
         game.showdown();
+        // Remove automatic next hand start - will be triggered by /next-hand endpoint
+      } catch (err) {
+        console.error("Game loop error:", err);
+      }
+    })();
 
-        // Wait a bit to show the showdown
-        await new Promise(resolve => setTimeout(resolve, 3000));
+    // Send response immediately (non-blocking)
+    res.status(200).send({ success: true });
 
-        // Start next hand
-        game.startHand();
+  } catch (err) {
+    console.error('Game crashed:', err);
+    res.status(500).send('Server crashed');
+  }
+});
+
+// Add new endpoint for starting next hand
+app.post('/next-hand', async (req: Request, res: Response) => {
+  try {
+    console.log("🔄 Starting next hand");
+    
+    // Reset showdown state and start next hand
+    game.startHand();
+    
+    // Kick off async game loop for next hand
+    (async () => {
+      try {
         await game.bettingRound("Preflop");
 
-        remaining = game.getActivePlayers();
+        let remaining = game.getActivePlayers();
         if (remaining.length <= 1) {
           console.log("🏆 Only one player left — hand ends.");
           return;
@@ -116,12 +136,10 @@ app.post('/start', async (req: Request, res: Response) => {
       }
     })();
 
-    // Send response immediately (non-blocking)
     res.status(200).send({ success: true });
-
   } catch (err) {
-    console.error('Game crashed:', err);
-    res.status(500).send('Server crashed');
+    console.error('Failed to start next hand:', err);
+    res.status(500).send('Failed to start next hand');
   }
 });
 
@@ -159,33 +177,44 @@ app.get('/amount-range/:playerId', (req: express.Request, res: express.Response)
     });
   }
 
-  // Find the last valid raise amount by looking at non-all-in bets
+  // Find the last valid raise amount by looking at all bets, including all-ins
   let lastValidRaiseAmount = 0;
   let lastValidBet = 10; // Default to BB
 
-  // Get all non-all-in bets in descending order
-  const validBets = bets
-    .filter(b => !b.isAllIn)
-    .sort((a, b) => b.bet - a.bet);
+  // Get all bets in descending order, including all-ins
+  const allBets = bets
+    .map(b => b.bet)
+    .filter(bet => bet > 10) // Only consider bets above BB
+    .sort((a, b) => b - a);
 
-  // Find the last actual raise (not just a call)
-  let lastRaiseBets = validBets.filter(b => b.bet > 10); // bets higher than BB
-  if (lastRaiseBets.length >= 2) {
+  // Find the last actual raise
+  if (allBets.length >= 2) {
     // Find the two highest different bet amounts
-    let uniqueBets = Array.from(new Set(lastRaiseBets.map(b => b.bet)))
+    let uniqueBets = Array.from(new Set(allBets))
       .sort((a, b) => b - a);
     if (uniqueBets.length >= 2) {
-      lastValidRaiseAmount = uniqueBets[0] - uniqueBets[1];
-      lastValidBet = uniqueBets[0];
+      // If the highest bet was an all-in and it was more than a min-raise
+      const highestBetPlayer = bets.find(b => b.bet === uniqueBets[0]);
+      const secondHighestBet = uniqueBets[1];
+      const minRaiseOverPrevious = secondHighestBet + 10; // BB size min raise
+
+      if (highestBetPlayer?.isAllIn && uniqueBets[0] >= minRaiseOverPrevious) {
+        // Use the all-in amount to establish the raise size
+        lastValidRaiseAmount = uniqueBets[0] - secondHighestBet;
+        lastValidBet = uniqueBets[0];
+      } else {
+        lastValidRaiseAmount = uniqueBets[0] - uniqueBets[1];
+        lastValidBet = uniqueBets[0];
+      }
     } else {
       // If everyone just called the highest bet
       lastValidRaiseAmount = uniqueBets[0] - 10; // difference from BB
       lastValidBet = uniqueBets[0];
     }
-  } else if (lastRaiseBets.length === 1) {
+  } else if (allBets.length === 1) {
     // Only one raise
-    lastValidRaiseAmount = lastRaiseBets[0].bet - 10;
-    lastValidBet = lastRaiseBets[0].bet;
+    lastValidRaiseAmount = allBets[0] - 10;
+    lastValidBet = allBets[0];
   } else {
     // No raises yet
     lastValidRaiseAmount = 10; // BB size

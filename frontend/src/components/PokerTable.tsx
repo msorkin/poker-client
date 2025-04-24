@@ -25,6 +25,9 @@ interface PokerTableProps {
   smallBlindIndex: number;
   bigBlindIndex: number;
   showdown: boolean;
+  communityCards: Card[];
+  pot: number;
+  sidePots: { amount: number; contenders: string[] }[];
 }
 
 const positions = [
@@ -43,6 +46,9 @@ const PokerTable: React.FC<PokerTableProps> = ({
   smallBlindIndex,
   bigBlindIndex,
   showdown,
+  communityCards,
+  pot,
+  sidePots,
 }) => {
   const radius = 250; // distance from center to player
   const centerX = 300;
@@ -64,6 +70,24 @@ const PokerTable: React.FC<PokerTableProps> = ({
 
   return (
     <div className="table">
+      <div className="table-center">
+        <div className="pot-display">
+          <div>Pot: {pot}</div>
+          {sidePots.length > 0 && (
+            <div className="side-pots">
+              {sidePots.map((sidePot, i) => (
+                <div key={i} className="side-pot">
+                  {sidePot.amount} — {sidePot.contenders.join(', ')}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="community-cards">
+          <CardDisplay cards={communityCards} />
+        </div>
+      </div>
+
       {positionedPlayers.map((player, index) => (
         <div
           key={player.id}

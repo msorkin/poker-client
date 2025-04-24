@@ -27,6 +27,9 @@ export class PokerGame {
 
   private isShowdown: boolean = false;
 
+  private lastShowdownPot: number = 0;
+  private lastShowdownSidePots: { amount: number; contenders: Player[] }[] = [];
+
   constructor(players: Player[], smallBlind: number = 5, bigBlind: number = 10) {
     if (players.length < 2 || players.length > 6) {
       throw new Error("This version supports between 2 and 6 players.");
@@ -264,17 +267,22 @@ export class PokerGame {
   }
 
   public startHand() {
+    // Now we filter out players with zero stack when starting a new hand
+    this.players = this.players.filter(p => p.stack > 0);
+    
     this.dealerIndex = (this.dealerIndex + 1) % this.players.length;
     const rotated = [...this.players.slice(this.dealerIndex), ...this.players.slice(0, this.dealerIndex)];
     this.players = rotated;
     this.dealerIndex = 0;
     
-  
     console.log(`\n💥 Starting Hand (Dealer: ${this.players[0].name})`);
     this.communityCards = [];
     this.pot = 0;
     this.sidePots = []; // Reset side pots at the beginning of the hand
+    this.lastShowdownPot = 0; // Reset last showdown pot
+    this.lastShowdownSidePots = []; // Reset last showdown side pots
     this.deck.reset();
+    this.isShowdown = false; // Reset showdown flag at the start of each hand
   
     this.players.forEach(p => p.resetForNextHand());
     this.players.forEach(p => p.receiveCards(this.deck.deal(2)));
@@ -350,12 +358,17 @@ export class PokerGame {
     // Make sure side pots are updated
     this.rebuildSidePots();
     
+    // Store the final pot amounts before distribution
+    this.lastShowdownPot = this.pot;
+    this.lastShowdownSidePots = [...this.sidePots];
+    
     if (this.sidePots.length === 0) {
       // If no side pots were created, make a main pot with all chips
       this.sidePots.push({
         amount: this.pot,
         contenders: [...playersInShowdown]
       });
+      this.lastShowdownSidePots = [...this.sidePots];
     }
   
     // Evaluate hands
@@ -394,8 +407,8 @@ export class PokerGame {
     }
   
     this.players.forEach(p => p.totalContributed = 0);
-    this.pot = 0;
-    this.players = this.players.filter(p => p.stack > 0);
+    
+    // Don't reset the pot here anymore - we'll use lastShowdownPot for display
     this.displayChipCounts();
 
     // Set showdown flag to true
@@ -688,8 +701,9 @@ export class PokerGame {
         suit: card.suit,
         rank: card.rank
       })),
-      pot: this.pot,
-      sidePots: this.sidePots.map(pot => ({
+      // Use the current pot or last showdown pot based on showdown state
+      pot: this.isShowdown ? this.lastShowdownPot : this.pot,
+      sidePots: (this.isShowdown ? this.lastShowdownSidePots : this.sidePots).map(pot => ({
         amount: pot.amount,
         contenders: pot.contenders.map(p => p.name)
       })),
@@ -701,7 +715,7 @@ export class PokerGame {
         totalContributed: player.totalContributed,
         folded: player.folded,
         allIn: player.stack === 0,
-        holeCards: (this.isShowdown || player.stack === 0 || player.folded)
+        holeCards: (this.isShowdown && !player.folded)
           ? player.holeCards.map(card => ({ suit: card.suit, rank: card.rank }))
           : []
       })),
