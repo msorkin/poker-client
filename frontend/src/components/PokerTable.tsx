@@ -91,7 +91,7 @@ const PokerTable: React.FC<PokerTableProps> = ({
       {positionedPlayers.map((player, index) => (
         <div
           key={player.id}
-          className={`player ${player.name === currentTurn ? 'current-turn' : ''}`}
+          className={`player ${player.name === currentTurn ? 'current-turn' : ''} ${player.folded ? 'folded' : ''}`}
           style={player.style}
         >
           <strong>{player.name}</strong> <br />

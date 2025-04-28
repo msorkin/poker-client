@@ -9,9 +9,9 @@ const players: Player[] = [
   new Player('1', 'Alice', 1000),
   new Player('2', 'Bob', 1000),
   new Player('3', 'Charlie', 1000),
-  new Player('4', 'Diana', 45),
-  new Player('5', 'Eddie', 1000),
-  new Player('6', 'Fiona', 45),
+  new Player('4', 'Diana', 60),
+  new Player('5', 'Eddie', 15),
+  new Player('6', 'Fiona', 60),
 ];
 
 const game = new PokerGame(players, 5, 10);
@@ -146,96 +146,18 @@ app.post('/next-hand', async (req: Request, res: Response) => {
 app.get('/amount-range/:playerId', (req: express.Request, res: express.Response) => {
   const { playerId } = req.params;
   
-  const gameState = game.getGameState();
-  const player = gameState.players.find(p => p.id === playerId);
+  // Get the actual Player instance from the game
+  const player = game.getPlayers().find((p: Player) => p.id === playerId);
   if (!player) {
     return res.json({ ready: false });
   }
 
-  // Get all bets and sort them in descending order
-  const bets = gameState.players
-    .map(p => ({ 
-      bet: p.currentBet || 0,
-      stack: p.stack,
-      totalChips: (p.currentBet || 0) + p.stack,
-      isAllIn: p.stack === 0 && (p.currentBet || 0) > 0,
-      name: p.name // Add name for debugging
-    }))
-    .sort((a, b) => b.bet - a.bet);
-
-  const highestBet = Math.max(...bets.map(b => b.bet));
-  console.log(`[AMOUNT RANGE] Current bets:`, bets.map(b => `${b.name}: ${b.bet}${b.isAllIn ? ' (all-in)' : ''}`));
-
-  // Special case for initial preflop raise (when highest bet is the BB)
-  if (highestBet === 10 && bets.find(b => b.bet === 5)) {
-    return res.json({
-      ready: true,
-      range: {
-        min: Math.min(20, player.stack),
-        max: player.stack
-      }
-    });
-  }
-
-  // Find the last valid raise amount by looking at all bets, including all-ins
-  let lastValidRaiseAmount = 0;
-  let lastValidBet = 10; // Default to BB
-
-  // Get all bets in descending order, including all-ins
-  const allBets = bets
-    .map(b => b.bet)
-    .filter(bet => bet > 10) // Only consider bets above BB
-    .sort((a, b) => b - a);
-
-  // Find the last actual raise
-  if (allBets.length >= 2) {
-    // Find the two highest different bet amounts
-    let uniqueBets = Array.from(new Set(allBets))
-      .sort((a, b) => b - a);
-    if (uniqueBets.length >= 2) {
-      // If the highest bet was an all-in and it was more than a min-raise
-      const highestBetPlayer = bets.find(b => b.bet === uniqueBets[0]);
-      const secondHighestBet = uniqueBets[1];
-      const minRaiseOverPrevious = secondHighestBet + 10; // BB size min raise
-
-      if (highestBetPlayer?.isAllIn && uniqueBets[0] >= minRaiseOverPrevious) {
-        // Use the all-in amount to establish the raise size
-        lastValidRaiseAmount = uniqueBets[0] - secondHighestBet;
-        lastValidBet = uniqueBets[0];
-      } else {
-        lastValidRaiseAmount = uniqueBets[0] - uniqueBets[1];
-        lastValidBet = uniqueBets[0];
-      }
-    } else {
-      // If everyone just called the highest bet
-      lastValidRaiseAmount = uniqueBets[0] - 10; // difference from BB
-      lastValidBet = uniqueBets[0];
-    }
-  } else if (allBets.length === 1) {
-    // Only one raise
-    lastValidRaiseAmount = allBets[0] - 10;
-    lastValidBet = allBets[0];
-  } else {
-    // No raises yet
-    lastValidRaiseAmount = 10; // BB size
-    lastValidBet = 10;
-  }
-
-  // Ensure minimum raise is at least BB size
-  lastValidRaiseAmount = Math.max(lastValidRaiseAmount, 10);
-
-  // For a raise, we need to raise by at least the same amount as the last valid raise
-  const minRaise = lastValidBet + lastValidRaiseAmount;
-
-  console.log(`[AMOUNT RANGE] Last valid bet: ${lastValidBet}, Last valid raise: ${lastValidRaiseAmount}, Highest bet: ${highestBet}, Min raise: ${minRaise}`);
-
+  // Use the game's amount range calculation
+  const range = game.calculateAmountRange(player);
+  
   return res.json({
     ready: true,
-    range: {
-      // Player must at least match the highest bet if it's more than the minimum raise
-      min: Math.max(Math.min(minRaise, player.stack), highestBet),
-      max: player.stack
-    }
+    range
   });
 });
 

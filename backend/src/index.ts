@@ -23,7 +23,7 @@ const players: Player[] = [
     new Player('1', 'Alice', 1000),
     new Player('2', 'Bob', 1000),
     new Player('3', 'Charlie', 1000),
-    new Player('4', 'Diana', 45),
+    new Player('4', 'Diana', 60),
     new Player('5', 'Eddie', 1000),
     new Player('6', 'Fiona', 45),
   ];

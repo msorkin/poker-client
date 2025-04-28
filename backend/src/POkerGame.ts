@@ -29,6 +29,7 @@ export class PokerGame {
 
   private lastShowdownPot: number = 0;
   private lastShowdownSidePots: { amount: number; contenders: Player[] }[] = [];
+  private lastShowdownHandRankings: Map<string, string> = new Map();
 
   constructor(players: Player[], smallBlind: number = 5, bigBlind: number = 10) {
     if (players.length < 2 || players.length > 6) {
@@ -239,6 +240,14 @@ export class PokerGame {
         minAmount = player.currentBet + minRaiseAmount;
       }
       console.log(`[RAISE VALIDATION] Minimum raise to: ${minAmount}`);
+
+      // Special case: If player is going all-in but can't make the minimum raise,
+      // allow it as long as they're putting in more than the current bet
+      if (amount === player.stack + player.currentBet && amount > this.currentBet) {
+        console.log(`[RAISE VALIDATION] Allowing all-in raise below minimum: ${amount}`);
+        this.pendingAmountResolver(amount);
+        return;
+      }
     }
   
     if (amount < minAmount || amount > maxAmount) {
@@ -371,12 +380,17 @@ export class PokerGame {
       this.lastShowdownSidePots = [...this.sidePots];
     }
   
+    // Clear previous rankings
+    this.lastShowdownHandRankings.clear();
+
     // Evaluate hands
     const handResults = new Map<Player, ReturnType<typeof HandEvaluator.evaluateBestHand>>();
     for (const player of playersInShowdown) {
       const fullHand = [...player.holeCards, ...board];
       const best = HandEvaluator.evaluateBestHand(fullHand);
       handResults.set(player, best);
+      // Store the hand description for the game state
+      this.lastShowdownHandRankings.set(player.name, describeHand(best));
       console.log(`${player.name}'s best hand: ${describeHand(best)}`);
     }
   
@@ -575,21 +589,24 @@ export class PokerGame {
         player.hasMadeDecisionThisRound = 1;
       } else if (action === 'bet') {
         let amount = await this.requestPlayerAmount(
-            player,
-            `Enter bet amount (min ${this.bigBlind}):`,
-            this.bigBlind,
-            player.stack
-          );
+          player,
+          `Enter bet amount (min ${this.bigBlind}):`,
+          this.bigBlind,  // Post-flop minimum bet is always the big blind
+          player.stack
+        );
   
         player.stack -= amount;
         player.currentBet += amount;
         player.totalContributed += amount;
         this.pot += amount;
   
-        this.lastBetBeforeRaise = 0;
-        this.lastRaiseTo = amount;
+        // When someone makes a bet post-flop, we need to set up the raise tracking properly
+        this.lastBetBeforeRaise = 0;  // There was no bet before this one
+        this.lastRaiseTo = amount;    // This is the amount that needs to be matched
         this.lastLegalRaiseTo = amount;
+        this.lastBetAmount = amount;  // Track the bet amount for future raise calculations
         currentBet = amount;
+        
         lastAggressor = player;
         lastLegalAggressor = player;
         wasShortRaise = false;
@@ -602,17 +619,20 @@ export class PokerGame {
         });
         
         console.log(`${player.name} bets ${amount}.`);
+        console.log(`[BET LOGIC] Setting lastLegalRaiseTo to ${amount} for future raise calculations`);
       } else if (action === 'raise') {
+        // For post-flop, minimum raise is the size of the previous bet/raise
         const minRaiseAmount = Math.max(this.lastLegalRaiseTo - this.lastBetBeforeRaise, this.bigBlind);
-        const calculatedMinRaiseTo = player.currentBet + minRaiseAmount;
-        const minRaiseTo = Math.max(calculatedMinRaiseTo, this.bigBlind);
+        const minRaiseTo = currentBet + minRaiseAmount;
         
-        const maxRaise = Math.max(player.stack + player.currentBet, minRaiseTo);
+        const maxRaise = player.stack + player.currentBet;
         
-        console.log(`[RAISE LOGIC] lastLegalRaiseTo: ${this.lastLegalRaiseTo}`);
-        console.log(`[RAISE LOGIC] lastBetBeforeRaise: ${this.lastBetBeforeRaise}`);
-        console.log(`[RAISE LOGIC] currentBet: ${currentBet}`);
-        console.log(`[RAISE LOGIC] minRaiseTo: ${minRaiseTo}, maxRaise: ${maxRaise}`);
+        console.log(`[RAISE LOGIC] Current bet: ${currentBet}`);
+        console.log(`[RAISE LOGIC] Last legal raise to: ${this.lastLegalRaiseTo}`);
+        console.log(`[RAISE LOGIC] Last bet before raise: ${this.lastBetBeforeRaise}`);
+        console.log(`[RAISE LOGIC] Min raise amount: ${minRaiseAmount}`);
+        console.log(`[RAISE LOGIC] Min raise to: ${minRaiseTo}`);
+        console.log(`[RAISE LOGIC] Max raise: ${maxRaise}`);
         
         // Request the raise amount
         const raiseTo = await this.requestPlayerAmount(
@@ -630,30 +650,35 @@ export class PokerGame {
       
         if (player.stack === 0) {
           console.log(`${player.name} is all-in with ${raiseAmount}, raising to ${raiseTo}.`);
+          // Check if this is a short all-in
+          if (raiseTo - currentBet < minRaiseAmount) {
+            wasShortRaise = true;
+            // Don't update lastLegalRaiseTo or lastBetBeforeRaise for short all-ins
+            console.log(`[RAISE LOGIC] Short all-in detected, keeping last legal raise at ${this.lastLegalRaiseTo}`);
+          } else {
+            // Valid all-in raise
+            wasShortRaise = false;
+            this.lastLegalRaiseTo = raiseTo;
+            // If current bet was from a short all-in, use the bet before that
+            const currentBetWasShortAllIn = this.players.some(p => p.currentBet === currentBet && p.stack === 0 && currentBet - this.lastBetBeforeRaise < this.bigBlind);
+            this.lastBetBeforeRaise = currentBetWasShortAllIn ? this.lastBetBeforeRaise : currentBet;
+            console.log(`[RAISE LOGIC] Valid all-in raise, updating last legal raise to ${raiseTo}`);
+          }
         } else {
           console.log(`${player.name} raises to ${raiseTo}.`);
-        }
-      
-        // Detect if this is a short raise
-        wasShortRaise = (raiseTo - currentBet) < minRaiseAmount;
-      
-        if (!wasShortRaise) {
-          // If this is a valid raise, clear all short raise tracking
+          // Regular raise, always valid
           wasShortRaise = false;
-          lastLegalAggressor = null;
           this.lastLegalRaiseTo = raiseTo;
-          this.lastBetBeforeRaise = currentBet;
-        } else {
-          // Only set the last legal aggressor if this was a short raise
-          lastLegalAggressor = player;
+          // If current bet was from a short all-in, use the bet before that
+          const currentBetWasShortAllIn = this.players.some(p => p.currentBet === currentBet && p.stack === 0 && currentBet - this.lastBetBeforeRaise < this.bigBlind);
+          this.lastBetBeforeRaise = currentBetWasShortAllIn ? this.lastBetBeforeRaise : currentBet;
+          console.log(`[RAISE LOGIC] Valid raise, updating last legal raise to ${raiseTo}`);
         }
       
         lastAggressor = player;
         this.lastRaiseTo = raiseTo;
         currentBet = raiseTo;
-        this.lastBetAmount = currentBet;
-        isAggressiveAction = true;
-      
+        
         // Reset decision flags for other players
         player.hasMadeDecisionThisRound = 1;
         activePlayers.forEach(p => {
@@ -717,7 +742,10 @@ export class PokerGame {
         allIn: player.stack === 0,
         holeCards: (this.isShowdown && !player.folded)
           ? player.holeCards.map(card => ({ suit: card.suit, rank: card.rank }))
-          : []
+          : [],
+        handRanking: this.isShowdown && !player.folded 
+          ? this.lastShowdownHandRankings.get(player.name) || null
+          : null
       })),
       currentTurn: this.currentPlayerAwaitingAction?.name ?? null,
       validActions: this.currentPlayerAwaitingAction
@@ -728,5 +756,63 @@ export class PokerGame {
     };
   
     return state;
+  }
+
+  public getPlayers(): Player[] {
+    return this.players;
+  }
+
+  public calculateAmountRange(player: Player): { min: number; max: number } {
+    const bets = this.players.map(p => ({
+      bet: p.currentBet,
+      isAllIn: p.stack === 0,
+      name: p.name
+    })).sort((a, b) => b.bet - a.bet);
+
+    const highestBet = bets[0].bet;
+    
+    // If no bets yet, minimum is BB
+    if (highestBet === 0) {
+      return {
+        min: Math.min(this.bigBlind, player.stack),
+        max: player.stack
+      };
+    }
+
+    // If only blinds are posted (preflop)
+    if (highestBet === this.bigBlind && this.players.some(p => p.currentBet === this.smallBlind)) {
+      return {
+        min: Math.min(this.bigBlind * 2, player.stack),
+        max: player.stack
+      };
+    }
+
+    // Calculate minimum raise based on the last legal raise
+    const minRaiseAmount = Math.max(this.lastLegalRaiseTo - this.lastBetBeforeRaise, this.bigBlind);
+
+    // Check if the current highest bet is from a short all-in
+    const isHighestBetShortAllIn = this.players.some(p => 
+      p.currentBet === highestBet && 
+      p.stack === 0 && 
+      (highestBet - this.lastBetBeforeRaise) < minRaiseAmount
+    );
+
+    // If highest bet is a short all-in, minimum is lastLegalRaiseTo
+    // Otherwise, need to raise by at least minRaiseAmount over lastLegalRaiseTo
+    const minRaiseTo = isHighestBetShortAllIn 
+      ? this.lastLegalRaiseTo 
+      : this.lastLegalRaiseTo + minRaiseAmount;
+
+    console.log(`[AMOUNT RANGE] Highest bet: ${highestBet}`);
+    console.log(`[AMOUNT RANGE] Last legal raise to: ${this.lastLegalRaiseTo}`);
+    console.log(`[AMOUNT RANGE] Last bet before raise: ${this.lastBetBeforeRaise}`);
+    console.log(`[AMOUNT RANGE] Min raise amount: ${minRaiseAmount}`);
+    console.log(`[AMOUNT RANGE] Is highest bet short all-in: ${isHighestBetShortAllIn}`);
+    console.log(`[AMOUNT RANGE] Min raise to: ${minRaiseTo}`);
+
+    return {
+      min: Math.min(minRaiseTo, player.stack),
+      max: player.stack
+    };
   }
 }

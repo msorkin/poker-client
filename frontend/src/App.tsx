@@ -19,6 +19,7 @@ interface PlayerState {
   folded: boolean;
   allIn: boolean;
   holeCards: Card[] | null;
+  handRanking: string | null;
 }
 
 interface GameState {
@@ -287,11 +288,21 @@ if (!gameState) {
                   borderRadius: 4
                 }}>
                   <strong>{player.name}:</strong>
-                  <CardDisplay cards={player.holeCards || []} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <CardDisplay cards={player.holeCards || []} />
+                    {player.handRanking && (
+                      <div style={{ 
+                        color: '#8bc34a',
+                        fontSize: '0.9em',
+                        fontStyle: 'italic'
+                      }}>
+                        {player.handRanking}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
           </div>
-          {/* Add Next Hand button that only shows during showdown */}
           <button 
             onClick={startNextHand}
             style={{ 
