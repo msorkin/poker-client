@@ -3,6 +3,7 @@ import cors from 'cors';
 import { PokerGame } from './POkerGame';
 import { PokerGameController } from './PokerGameController';
 import { Player } from './Player';
+import { PrismaClient } from '../../prisma/node_modules/@prisma/client';
 
 // --- Create Players and Game ---
 const players: Player[] = [
@@ -19,6 +20,8 @@ const controller = new PokerGameController(game, 7);
 
 // Add this where other variables are defined
 const games = new Map<string, PokerGame>();
+
+const prisma = new PrismaClient();
 
 // --- Create Server ---
 const app = express();
@@ -161,8 +164,95 @@ app.get('/amount-range/:playerId', (req: express.Request, res: express.Response)
   });
 });
 
+// --- User CRUD Endpoints (DB-backed, does NOT affect in-memory game logic) ---
+
+// Create user
+app.post('/users', async (req: Request, res: Response) => {
+  try {
+    const { username, email, passwordHash } = req.body;
+    if (!username || !email || !passwordHash) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    const user = await prisma.user.create({
+      data: { username, email, passwordHash },
+    });
+    res.status(201).json(user);
+  } catch (err: any) {
+    if (err.code === 'P2002') {
+      // Unique constraint failed
+      return res.status(409).json({ error: 'Username or email already exists' });
+    }
+    console.error(err);
+    res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+// Get all users
+app.get('/users', async (req: Request, res: Response) => {
+  try {
+    const users = await prisma.user.findMany();
+    res.json(users);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+// Get user by ID
+app.get('/users/:id', async (req: Request, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(user);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch user' });
+  }
+});
+
+// Update user
+app.put('/users/:id', async (req: Request, res: Response) => {
+  try {
+    const { username, email, passwordHash } = req.body;
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { username, email, passwordHash },
+    });
+    res.json(user);
+  } catch (err: any) {
+    if (err.code === 'P2025') {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    if (err.code === 'P2002') {
+      return res.status(409).json({ error: 'Username or email already exists' });
+    }
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update user' });
+  }
+});
+
+// Delete user
+app.delete('/users/:id', async (req: Request, res: Response) => {
+  try {
+    await prisma.user.delete({ where: { id: req.params.id } });
+    res.status(204).send();
+  } catch (err: any) {
+    if (err.code === 'P2025') {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    console.error(err);
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
 // --- Start Server ---
 const PORT = 3001;
-app.listen(PORT, () => {
-  console.log(`Poker server running at http://localhost:${PORT}`);
-});
+
+// Only start the server if we're not in a test environment
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`Poker server running at http://localhost:${PORT}`);
+  });
+}
+
+export { app };

@@ -1,0 +1,22 @@
+Cookies and Tracking
+
+We and other third-party providers use cookies and similar tracking mechanisms to track your use of our Website. When your computer or mobile device contacts our web servers (for example, when you visit our Website or view an HTML email), our web servers automatically collect usage information. Such usage information includes information about how our visitors use and navigate our Website, the number and frequency of visitors to each web page and the length of their stays, browser type, referrer data that identifies the web page visited prior and subsequent to visiting our Website, and IP addresses. We also may determine the applicable technology available in order to serve you the most appropriate version of a web page, email, advertising or promotional announcement or similar service. This information is used to analyze and improve the Website and Services and to provide you with a more fulfilling and relevant experience. The tools that we use to collect and process this data are described below.
+
+Cookies. Cookies are text files that websites store on your device to uniquely identify your browser or to store information or settings in the browser for the purpose of helping you navigate between pages efficiently, remembering your preferences, enabling functionality, helping us understand user activity and patterns, and facilitating analytics activities.
+
+Web beacons, pixel tags, and similar technologies. Web beacons are tiny graphics with a unique identifier, similar in function to cookies, which are embedded invisibly on web pages. We or our service providers may use web beacons (also known as clear GIFs, web bugs, pixel tags, or action tags, among other names), in connection with our Website and Services to perform functions like tracking the activities of visitors to our Website, helping us manage content, and compiling statistics about usage of our Website. We or our third-party providers may also use clear GIFs in emails to help us track email response rates, identify when our emails are viewed, and track whether our emails are forwarded.
+
+Analytics. We and third parties, such as Google Analytics, use cookies and other tracking technologies to evaluate how visitors interact with our Website. We use these tools to help us improve our Website, performance, and user experience. See below for your Privacy Choices.
+
+Privacy Choices
+
+You may manage your preferences and privacy choices, as described below:
+
+Cookie Settings.To prevent cookies from tracking your activity on our Website or your visits across multiple websites, you can set your browser to block certain cookies or to notify you when a cookie is set; you can also delete cookies. The “Help” portion of the toolbar on most browsers will tell you how to prevent your device from accepting new cookies, how to have the browser notify you when you receive a new cookie, or how to delete cookies. Visitors to our Website who disable cookies will be able to browse the website , but some features may not function. Please note that third parties may collect personal information about your online activities over time and across different websites when you use the Website. If you no longer wish to have your information shared for these purposes, submit a ticket with Player Support.
+
+Opt-Out Rights 
+Online Behavioral Advertising. NOTE: We do not use your personal data for online behavioral advertising.
+
+Network Advertising Initiative ("NAI") and the Digital Advertising Alliance ("DAA"). You may opt out of receiving Interest-Based Ads from many third-party ad networks, such as those provided by members of the NAI and DAA. For more information regarding Interest-Based Ads by NAI and DAA members, including how to opt out of Interest-Based Ads provided by NAI and DAA members, please visit their respective websites: optout.networkadvertising.org and optout.aboutads.info. You must opt ​​out on each browser and on each device.
+
+Google Analytics. We and third parties, such as Google Analytics, use cookies and other tracking technologies to evaluate how visitors interact with our Website. We use these tools to help us improve our Website, performance, and user experience. You can download the Google Analytics Opt-out Browser Add-on to prevent your data from being used by Google Analytics at https://tools.google.com/dlpage/gaoptout .
