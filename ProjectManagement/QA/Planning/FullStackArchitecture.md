@@ -68,23 +68,23 @@
 **Step-by-step checklist for minimal DB schema with Supabase:**
 - [x] Create a free account at [supabase.com](https://supabase.com) and start a new project
 - [x] Wait for your Supabase database to initialize (can take a few minutes)
-- [ ] In the Supabase dashboard, go to Project Settings → Database → Connection string
-- [ ] Copy the `postgresql://...` connection string
-- [ ] In your project, add Prisma (`npm install prisma @prisma/client`)
-- [ ] Initialize Prisma (`npx prisma init`)
-- [ ] In your project root, open `.env` and set `DATABASE_URL` to your Supabase connection string
-- [ ] In `prisma/schema.prisma`, set the provider to `postgresql`
-- [ ] Define minimal schema in `prisma/schema.prisma`:
-    - [ ] `User` table (id, username, email, passwordHash, createdAt)
-    - [ ] `Game` table (id, createdAt, status)
-    - [ ] `Hand` table (id, gameId, handNumber, state, createdAt)
-    - [ ] `TableSession` table (id, gameId, playerId, joinedAt)
-- [ ] Run `npx prisma migrate dev --name init` to create tables in Supabase
-- [ ] (Optional) Add a Prisma seed script to create test users and games
-- [ ] Test your DB connection:
-    - [ ] Use `npx prisma studio` to view/edit tables
-    - [ ] Or use the Supabase web UI to check your tables
-    - [ ] Or run a simple query from your backend using Prisma
+- [x] In the Supabase dashboard, go to Project Settings → Database → Connection string
+- [x] Copy the `postgresql://...` connection string
+- [x] In your project, add Prisma (`npm install prisma @prisma/client`)
+- [x] Initialize Prisma (`npx prisma init`)
+- [x] In your project root, open `.env` and set `DATABASE_URL` to your Supabase connection string
+- [x] In `prisma/schema.prisma`, set the provider to `postgresql`
+- [x] Define minimal schema in `prisma/schema.prisma`:
+    - [x] `User` table (id, username, email, passwordHash, createdAt)
+    - [x] `Game` table (id, createdAt, status)
+    - [x] `Hand` table (id, gameId, handNumber, state, createdAt)
+    - [x] `TableSession` table (id, gameId, playerId, joinedAt)
+- [x] Run `npx prisma migrate dev --name init` to create tables in Supabase
+- [x] (Optional) Add a Prisma seed script to create test users and games
+- [x] Test your DB connection:
+    - [x] Use `npx prisma studio` to view/edit tables
+    - [x] Or use the Supabase web UI to check your tables
+    - [x] Or run a simple query from your backend using Prisma
 
 **(Once these are done, you can start building security features that use these tables!)**
 
