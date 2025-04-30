@@ -1,5 +1,18 @@
 Common PostgreSQL Database Architecture Mistakes
 
+Avoid redundant state sources
+If you have:
+
+game state in memory,
+
+action logs in DB, and
+
+hand snapshots in another table…
+
+Then clearly define the source of truth. E.g.:
+
+Game logic is in memory; snapshots are for recovery only; actions are for audit and replay.
+
 Poor indexing strategy
 
 Over-indexing tables causing slower writes and wasted storage

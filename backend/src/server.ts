@@ -43,10 +43,20 @@ let activeGames = new Map<string, { game: PokerGame; controller: PokerGameContro
 // Create a new game
 app.post('/games', async (req: Request, res: Response) => {
   try {
-    const { playerIds } = req.body;
+    const { playerIds, maxSeats = 6 } = req.body;
     
-    if (!playerIds || !Array.isArray(playerIds) || playerIds.length < 2 || playerIds.length > 6) {
-      return res.status(400).json({ error: 'Invalid number of players. Must be between 2 and 6.' });
+    if (!playerIds || !Array.isArray(playerIds)) {
+      return res.status(400).json({ error: 'Invalid playerIds format' });
+    }
+
+    // Validate maxSeats
+    if (maxSeats < 2 || maxSeats > 9) {
+      return res.status(400).json({ error: 'maxSeats must be between 2 and 9 inclusive' });
+    }
+
+    // Validate number of players
+    if (playerIds.length < 2 || playerIds.length > maxSeats) {
+      return res.status(400).json({ error: `Invalid number of players. Must be between 2 and ${maxSeats}.` });
     }
 
     // Get players from database
@@ -68,7 +78,7 @@ app.post('/games', async (req: Request, res: Response) => {
     );
 
     // Create game in database
-    const dbGame = await gameService.createGame(players);
+    const dbGame = await gameService.createGame(players, 5, 10, 10, maxSeats);
 
     // Create in-memory game instance
     const game = new PokerGame(players, dbGame.smallBlind, dbGame.bigBlind);

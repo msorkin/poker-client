@@ -21,8 +21,18 @@ interface SidePot {
 }
 
 export class GameService {
-  async createGame(players: Player[], smallBlind: number = 5, bigBlind: number = 10, maxHands: number = 10) {
+  async createGame(players: Player[], smallBlind: number = 5, bigBlind: number = 10, maxHands: number = 10, maxSeats: number = 6) {
     try {
+      // Validate maxSeats is between 2 and 9
+      if (maxSeats < 2 || maxSeats > 9) {
+        throw new Error('maxSeats must be between 2 and 9 inclusive');
+      }
+
+      // Validate number of players doesn't exceed maxSeats
+      if (players.length > maxSeats) {
+        throw new Error(`Number of players (${players.length}) exceeds maximum seats (${maxSeats})`);
+      }
+
       // Create the game record with initial configuration
       const game = await prisma.game.create({
         data: {
@@ -30,6 +40,7 @@ export class GameService {
           smallBlind,
           bigBlind,
           maxHands,
+          maxSeats,
           currentHand: 0,
           dealerIndex: 0,
           // Create table sessions for each player
@@ -242,12 +253,32 @@ export class GameService {
 
   async removePlayerFromTable(gameId: string, playerId: string): Promise<void> {
     try {
+      // First get the seat index of the player being removed
+      const session = await prisma.tableSession.findFirst({
+        where: {
+          gameId,
+          playerId
+        },
+        select: {
+          seatIndex: true
+        }
+      });
+
+      if (!session) {
+        throw new Error(`Player ${playerId} not found at table ${gameId}`);
+      }
+
+      // Delete the player's session
       await prisma.tableSession.deleteMany({
         where: {
           gameId,
           playerId
         }
       });
+
+      // The seat is now automatically available due to the deletion
+      // The unique constraint on [gameId, seatIndex] ensures no conflicts
+      // when new players join
 
       // Check if table should be closed
       await this.closeTableIfEmpty(gameId);

@@ -28,13 +28,21 @@ enum BettingRound {
   SHOWDOWN
 }
 
+enum TransactionType {
+  BUYIN
+  CASHOUT
+  REBUY
+}
+
 model User {
   id           String   @id @default(uuid())
   username     String   @unique
   email        String   @unique
   passwordHash String
+  balance      Int      @default(0)
   createdAt    DateTime @default(now())
   sessions     TableSession[]
+  transactions Transaction[]
 }
 
 model Game {
@@ -44,12 +52,18 @@ model Game {
   status        GameStatus
   smallBlind    Int
   bigBlind      Int
+  minBuyIn      Int      @default(100)  // Default to 100 chips
+  maxBuyIn      Int      @default(1000) // Default to 1000 chips
   maxHands      Int
+  maxSeats      Int      @db.SmallInt   // Maximum number of players allowed at the table
   currentHand   Int      @default(0)
   dealerIndex   Int      @default(0)
   currentRound  BettingRound?
   hands         Hand[]
   sessions      TableSession[]
+  transactions  Transaction[]
+
+  @@check(maxSeats >= 2 && maxSeats <= 9)
 }
 
 model Hand {
@@ -77,4 +91,20 @@ model TableSession {
   joinedAt  DateTime @default(now())
   stack     Int      // Current chip stack
   seatIndex Int      // Position at table
+
+  @@unique([gameId, seatIndex])
+}
+
+model Transaction {
+  id            String          @id @default(uuid())
+  userId        String
+  user          User            @relation(fields: [userId], references: [id])
+  type          TransactionType
+  amount        Int
+  gameId        String?
+  game          Game?           @relation(fields: [gameId], references: [id])
+  balanceBefore Int
+  balanceAfter  Int
+  timestamp     DateTime        @default(now())
+  status        String          @default("COMPLETED")
 }
