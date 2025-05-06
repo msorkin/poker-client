@@ -191,36 +191,21 @@ export class BuyInManager {
             throw new Error(`Table is full (max ${game.maxSeats} seats)`);
           }
 
-          // Verify the seat is still available by attempting to create a temporary session
-          // This will fail if another transaction claimed the seat
-          await tx.tableSession.create({
-            data: {
-              gameId,
-              playerId: 'temp', // Temporary ID to reserve the seat
-              seatIndex: nextSeat,
-              stack: 0
-            }
-          });
-
-          // If we got here, the seat is ours
           return nextSeat;
         }, {
           isolationLevel: 'Serializable',
-          maxWait: 5000, // 5 seconds
-          timeout: 10000 // 10 seconds
+          maxWait: 5000,
+          timeout: 10000
         });
       } catch (error: unknown) {
         lastError = error instanceof Error ? error : new Error(String(error));
         retries++;
         
-        // If it's a unique constraint violation, another transaction got the seat
-        // We should retry
         if (error && typeof error === 'object' && 'code' in error && 
             error.code === 'P2002') {
           continue;
         }
         
-        // For other errors, throw immediately
         throw error;
       }
     }

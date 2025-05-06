@@ -20,6 +20,7 @@ async function main() {
   // Clean up existing data
   console.log('🧹 Cleaning up existing data...');
   await prisma.$transaction([
+    prisma.transactionRecord.deleteMany(),
     prisma.tableSession.deleteMany(),
     prisma.hand.deleteMany(),
     prisma.game.deleteMany(),
@@ -35,30 +36,17 @@ async function main() {
     { username: 'dave', email: 'dave@test.com', password: 'password123' },
   ];
   
-  // Create users directly with Prisma so they are visible in transactions
+  // Create users directly with Prisma
   const users = await Promise.all(userData.map(data =>
     prisma.user.create({
       data: {
         username: data.username,
         email: data.email,
-        passwordHash: data.password, // If you want to hash, call hash function here
+        passwordHash: data.password,
         balance: 10000,
       }
     })
   ));
-
-  // Update user balances
-  console.log('💰 Setting initial balances...');
-  await Promise.all(
-    users.map(user =>
-      prisma.user.update({
-        where: { id: user.id },
-        data: {
-          balance: { set: 10000 } // Correct format to update scalar fields
-        }
-      })
-    )
-  );
 
   // Create a test game
   console.log('🎮 Creating test game...');
@@ -80,11 +68,11 @@ async function main() {
   // Set up initial table sessions with buy-ins
   console.log('🪑 Setting up table sessions...');
   const buyInAmount = 1000;
-  await Promise.all(
-    users.map(user =>
-      buyInManager.processInitialBuyIn(game.id, user.id, buyInAmount)
-    )
-  );
+  
+  // Process buy-ins sequentially to avoid race conditions
+  for (const user of users) {
+    await buyInManager.processInitialBuyIn(game.id, user.id, buyInAmount);
+  }
 
   console.log('✅ Seed completed successfully!');
 }
