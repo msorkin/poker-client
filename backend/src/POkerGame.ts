@@ -222,7 +222,7 @@ export class PokerGame {
       console.warn(`It's not ${player.name}'s turn.`);
       return;
     }
-
+  
     // Calculate minimum raise amount for validation
     let minAmount = this.amountRange.min;
     let maxAmount = this.amountRange.max;
@@ -283,7 +283,7 @@ export class PokerGame {
     const rotated = [...this.players.slice(this.dealerIndex), ...this.players.slice(0, this.dealerIndex)];
     this.players = rotated;
     this.dealerIndex = 0;
-    
+  
     console.log(`\n💥 Starting Hand (Dealer: ${this.players[0].name})`);
     this.communityCards = [];
     this.pot = 0;
@@ -382,7 +382,7 @@ export class PokerGame {
   
     // Clear previous rankings
     this.lastShowdownHandRankings.clear();
-
+  
     // Evaluate hands
     const handResults = new Map<Player, ReturnType<typeof HandEvaluator.evaluateBestHand>>();
     for (const player of playersInShowdown) {
@@ -482,12 +482,12 @@ export class PokerGame {
       return;
     }
 
-    canAct = activePlayers.filter(p => p.stack > 0);
+canAct = activePlayers.filter(p => p.stack > 0);
 
-    if (canAct.length <= 1) {
-      console.log("All players are all-in or only one player can act. Skipping betting round.");
-      return;
-    }
+if (canAct.length <= 1) {
+  console.log("All players are all-in or only one player can act. Skipping betting round.");
+  return;
+}
   
     // Reset decision flags
     this.players.forEach(p => (p.hasMadeDecisionThisRound = 0));
@@ -545,8 +545,8 @@ export class PokerGame {
           // Allow raise if player has enough chips and either:
           // 1. There was no short raise, or
           // 2. There was a valid raise after the short raise
-          options.push('raise');
-        }
+            options.push('raise');
+          }
       }
   
       console.log(`Options: ${options.join(', ')}`);
@@ -589,11 +589,11 @@ export class PokerGame {
         player.hasMadeDecisionThisRound = 1;
       } else if (action === 'bet') {
         let amount = await this.requestPlayerAmount(
-          player,
-          `Enter bet amount (min ${this.bigBlind}):`,
+            player,
+            `Enter bet amount (min ${this.bigBlind}):`,
           this.bigBlind,  // Post-flop minimum bet is always the big blind
-          player.stack
-        );
+            player.stack
+          );
   
         player.stack -= amount;
         player.currentBet += amount;
@@ -620,11 +620,11 @@ export class PokerGame {
         
         console.log(`${player.name} bets ${amount}.`);
         console.log(`[BET LOGIC] Setting lastLegalRaiseTo to ${amount} for future raise calculations`);
-      } else if (action === 'raise') {
+    } else if (action === 'raise') {
         // For post-flop, minimum raise is the size of the previous bet/raise
-        const minRaiseAmount = Math.max(this.lastLegalRaiseTo - this.lastBetBeforeRaise, this.bigBlind);
+      const minRaiseAmount = Math.max(this.lastLegalRaiseTo - this.lastBetBeforeRaise, this.bigBlind);
         const minRaiseTo = currentBet + minRaiseAmount;
-        
+      
         const maxRaise = player.stack + player.currentBet;
         
         console.log(`[RAISE LOGIC] Current bet: ${currentBet}`);
@@ -635,13 +635,13 @@ export class PokerGame {
         console.log(`[RAISE LOGIC] Max raise: ${maxRaise}`);
         
         // Request the raise amount
-        const raiseTo = await this.requestPlayerAmount(
-          player,
-          `Raise to (min ${minRaiseTo}, max ${maxRaise})`,
-          minRaiseTo,
-          maxRaise
-        );
-        
+      const raiseTo = await this.requestPlayerAmount(
+        player,
+        `Raise to (min ${minRaiseTo}, max ${maxRaise})`,
+        minRaiseTo,
+        maxRaise
+      );
+      
         const raiseAmount = raiseTo - player.currentBet;
         player.stack -= raiseAmount;
         player.currentBet += raiseAmount;
@@ -678,7 +678,7 @@ export class PokerGame {
         lastAggressor = player;
         this.lastRaiseTo = raiseTo;
         currentBet = raiseTo;
-        
+      
         // Reset decision flags for other players
         player.hasMadeDecisionThisRound = 1;
         activePlayers.forEach(p => {
@@ -708,16 +708,16 @@ export class PokerGame {
 
     // Reset player bets for next round
     this.players.forEach(p => {
-      p.currentBet = 0;
-      p.hasMadeDecisionThisRound = 0;
-    });
+    p.currentBet = 0;
+    p.hasMadeDecisionThisRound = 0;
+});
 
-    this.rebuildSidePots();
-    const mainPot = this.sidePots.length > 0 ? this.sidePots[0].amount : this.pot;
-    const sidePot = this.sidePots.length > 1 
-      ? this.sidePots.slice(1).reduce((sum, pot) => sum + pot.amount, 0) 
-      : 0;
-    console.log(`Pot is now ${this.pot} (Main pot: ${mainPot}, Side pot: ${sidePot})`);
+this.rebuildSidePots();
+const mainPot = this.sidePots.length > 0 ? this.sidePots[0].amount : this.pot;
+const sidePot = this.sidePots.length > 1 
+  ? this.sidePots.slice(1).reduce((sum, pot) => sum + pot.amount, 0) 
+  : 0;
+console.log(`Pot is now ${this.pot} (Main pot: ${mainPot}, Side pot: ${sidePot})`);
   }
 
   public getGameState(showHoleCards: boolean = false) {

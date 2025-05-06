@@ -106,7 +106,7 @@ export class BuyInManager {
         }
 
         // Create transaction record
-        await tx.transaction.create({
+        await tx.transactionRecord.create({
           data: {
             userId: playerId,
             type: TransactionType.BUYIN,

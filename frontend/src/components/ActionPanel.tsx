@@ -186,14 +186,14 @@ const ActionPanel: React.FC<ActionPanelProps> = ({ options, playerId, onActionSe
               onChange={handleSliderChange}
               style={{ ...sliderStyles.slider, ...sliderStyles.sliderThumb }}
             />
-            <input
-              type="number"
+        <input
+          type="number"
               min={amountRange.min}
               max={amountRange.max}
-              value={amount}
+          value={amount}
               onChange={handleInputChange}
               style={sliderStyles.numberInput}
-            />
+        />
           </div>
           <div style={sliderStyles.rangeLabels}>
             <span>Min: {amountRange.min}</span>
@@ -202,15 +202,15 @@ const ActionPanel: React.FC<ActionPanelProps> = ({ options, playerId, onActionSe
         </div>
       )}
       <div>
-        {options.map((opt) => (
+      {options.map((opt) => (
           <button 
             key={opt} 
             onClick={() => sendAction(opt)} 
             style={sliderStyles.actionButton}
           >
-            {opt.toUpperCase()}
-          </button>
-        ))}
+          {opt.toUpperCase()}
+        </button>
+      ))}
       </div>
     </div>
   );

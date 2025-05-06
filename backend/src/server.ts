@@ -1,11 +1,18 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
+import dotenv from 'dotenv';
 import { PokerGame } from './POkerGame';
 import { PokerGameController } from './PokerGameController';
 import { Player } from './Player';
 import { PrismaClient } from '@prisma/client';
 import { GameService } from './services/game.service';
 import { GameRecoveryService } from './services/game-recovery.service';
+
+//Print which DB we're using
+console.log("DATABASE_URL:", process.env.DATABASE_URL);
+
+// Load environment variables
+dotenv.config();
 
 // Define the User type based on our schema
 type User = {

@@ -22,7 +22,7 @@ export class GameRecoveryService {
       const dbGames = await prisma.game.findMany({
         where: {
           status: {
-            not: 'COMPLETED'
+            not: 'CLOSED'
           }
         },
         include: {

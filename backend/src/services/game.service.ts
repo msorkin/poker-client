@@ -70,7 +70,7 @@ export class GameService {
     }
   }
 
-  async updateGameStatus(gameId: string, status: 'WAITING' | 'ACTIVE' | 'IN_PROGRESS' | 'COMPLETED') {
+  async updateGameStatus(gameId: string, status: 'WAITING' | 'ACTIVE' | 'IN_PROGRESS' | 'CLOSED') {
     try {
       return await prisma.game.update({
         where: { id: gameId },

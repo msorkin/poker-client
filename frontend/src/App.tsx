@@ -128,20 +128,20 @@ function App() {
       try {
         const response = await fetch(`http://localhost:3001/state/${playerId}`);
         const data = await response.json();
-        console.log("📦 [poll] game state:", data);
+          console.log("📦 [poll] game state:", data);
         
         // Always update game state first
-        setGameState(data);
+          setGameState(data);
   
         // Then handle player switching if needed
-        const currentTurnName = data.currentTurn;
-        const activePlayer = data.players.find((p: PlayerState) => p.name === currentTurnName);
+          const currentTurnName = data.currentTurn;
+          const activePlayer = data.players.find((p: PlayerState) => p.name === currentTurnName);
   
-        if (activePlayer && activePlayer.id !== playerId) {
-          console.log("🔄 [poll] switching to:", activePlayer.name);
-          localStorage.setItem("playerId", activePlayer.id);
-          setPlayerId(activePlayer.id);
-        }
+          if (activePlayer && activePlayer.id !== playerId) {
+            console.log("🔄 [poll] switching to:", activePlayer.name);
+            localStorage.setItem("playerId", activePlayer.id);
+            setPlayerId(activePlayer.id);
+          }
       } catch (err) {
         console.error("❌ [poll] Failed:", err);
       }
@@ -256,10 +256,10 @@ if (!gameState) {
       <h3>Current Turn: {gameState.currentTurn || 'N/A'}</h3>
       
       {!gameState.showdown && gameState.currentTurn ===
-        gameState.players.find((p: PlayerState) => p.id.toString() === playerId)?.name && (
-        <ActionPanel
-          options={gameState.validActions || []}
-          playerId={playerId}
+      gameState.players.find((p: PlayerState) => p.id.toString() === playerId)?.name && (
+     <ActionPanel
+     options={gameState.validActions || []}
+      playerId={playerId}
           playerStack={gameState.players.find((p: PlayerState) => p.id.toString() === playerId)?.stack || 0}
           bigBlind={10}
           onActionSent={handleActionSent}
@@ -318,7 +318,7 @@ if (!gameState) {
             Next Hand ▶
           </button>
         </div>
-      )}
+)}
     </div>
   );
 }

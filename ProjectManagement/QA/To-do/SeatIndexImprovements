@@ -1,0 +1,37 @@
+⚠️ Minor Improvements to Consider
+These are not bugs, but they could become important as the system scales or as frontend logic becomes more interactive.
+
+1. Preventing Duplicate Seat Requests in Parallel
+While the transaction should handle it, it would be wise to explicitly handle the "seat taken" case by checking the unique constraint violation error code (P2002 from Prisma).
+
+Prompt to feed into Cursor:
+
+vbnet
+Copy
+Edit
+Improve seatIndex conflict handling in buy-in logic. Specifically:
+- Catch PrismaClientKnownRequestError where code === 'P2002'
+- If the error is due to gameId + seatIndex + isActive uniqueness violation, return a clear 409 Conflict response like:
+  "Seat X is already taken in game Y."
+- This will help client apps gracefully handle race conditions when multiple players try to join the same seat.
+2. Add Unit Tests for seatIndex validation edge cases
+seatIndex < 0
+
+seatIndex >= maxSeats
+
+seat already occupied
+
+seat reuse after player leaves (isActive = false)
+
+Prompt to feed into Cursor:
+
+diff
+Copy
+Edit
+Write unit tests for processInitialBuyIn with seatIndex scenarios:
+- Rejects seatIndex below 0
+- Rejects seatIndex >= maxSeats
+- Rejects seatIndex already occupied
+- Accepts previously occupied seat after player leaves (isActive = false)
+- Accepts auto-assigned seat if seatIndex not provided
+Use mocked Prisma calls and a test DB transaction for validation.
