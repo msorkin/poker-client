@@ -31,15 +31,21 @@ This plan details the step-by-step migration from in-memory data structures to a
 - [ ] Test authentication flows with admin privileges
 
 ## 3. Game Management (Phase 1)
-- [ ] Refactor game creation to write to the `Game` table via Prisma
-    - [ ] Replace in-memory game creation with Prisma `create`
-    - [ ] Add min/max buy-in configuration
-    - [ ] Add player limit configuration
-    - [ ] Store game status, createdAt, etc.
+- [x] Refactor game creation to write to the `Game` table via Prisma
+    - [x] Replace in-memory game creation with Prisma `create`
+    - [x] Add min/max buy-in configuration
+    - [x] Add player limit configuration
+    - [x] Store game status, createdAt, etc.
 - [ ] Implement buy-in management system
-    - [ ] Create BuyInManager service
-    - [ ] Add buy-in validation logic
-    - [ ] Implement rebuy functionality
+    - [x] Create BuyInManager service
+    - [x] Add buy-in validation logic
+    - [ ] Implement rebuy functionality // ----COME BACK TO THIS AFTER MVP---- 
+        - [ ] Add `rebuy()` method to `BuyInManager`
+        - [ ] Validate player is already seated
+        - [ ] Ensure rebuy does not exceed `maxBuyIn`
+        - [ ] Ensure player has sufficient balance
+        - [ ] Update `TableSession.stack` with rebuy amount
+        - [ ] Create `TransactionRecord` with type `REBUY`
 - [ ] Refactor game lookup and listing to use Prisma queries
 - [ ] Update all game-related logic to use DB IDs
 - [ ] Add game update and delete endpoints

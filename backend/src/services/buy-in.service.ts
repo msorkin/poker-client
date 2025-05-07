@@ -54,96 +54,79 @@ export class BuyInManager {
    * @returns The updated table session
    * @throws Error if buy-in validation fails or if player has insufficient balance
    */
-  async processInitialBuyIn(gameId: string, playerId: string, amount: number) {
-    try {
-      // Validate amount is a safe positive integer
-      if (!Number.isInteger(amount)) {
-        throw new Error(`Invalid buy-in amount: must be an integer, got ${amount}`);
-      }
-      if (amount <= 0) {
-        throw new Error(`Invalid buy-in amount: must be positive, got ${amount}`);
-      }
-      if (amount > Number.MAX_SAFE_INTEGER) {
-        throw new Error(`Invalid buy-in amount: must be less than ${Number.MAX_SAFE_INTEGER}, got ${amount}`);
-      }
-
-      // Validate the buy-in amount
-      const isValid = await this.validateBuyIn(gameId, amount);
-      if (!isValid) {
-        throw new Error('Invalid buy-in amount');
-      }
-
-      // Use a transaction to ensure atomicity of all operations
-      const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        // Get the player's current balance within the transaction
-        const user = await tx.user.findUnique({
+  async processInitialBuyIn(gameId: string, playerId: string, amount: number): Promise<void> {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      // Check that game and user exist
+      const [game, user] = await Promise.all([
+        tx.game.findUnique({
+          where: { id: gameId },
+          select: {
+            minBuyIn: true,
+            maxBuyIn: true,
+            maxSeats: true
+          }
+        }),
+        tx.user.findUnique({
           where: { id: playerId },
           select: { balance: true }
-        });
+        })
+      ]);
 
-        if (!user) {
-          throw new Error(`User with ID ${playerId} not found`);
-        }
+      if (!game) throw new Error(`Game ${gameId} not found`);
+      if (!user) throw new Error(`User ${playerId} not found`);
 
-        if (user.balance < amount) {
-          throw new Error('Insufficient balance for buy-in');
-        }
+      // Validate buy-in amount
+      if (amount < game.minBuyIn || amount > game.maxBuyIn) {
+        throw new Error(`Buy-in amount must be between ${game.minBuyIn} and ${game.maxBuyIn}`);
+      }
 
-        // Update user balance with additional check to prevent negative balance
-        const updatedUser = await tx.user.update({
-          where: { 
-            id: playerId,
-            balance: {
-              gte: amount // Only update if current balance is >= amount
-            }
-          },
-          data: { balance: { decrement: amount } },
-          select: { balance: true }
-        });
+      // Check user balance
+      if (user.balance < amount) {
+        throw new Error('Insufficient balance for buy-in');
+      }
 
-        if (!updatedUser) {
-          throw new Error('Insufficient balance for buy-in (race condition detected)');
-        }
+      // Find first available seat
+      const takenSeats = await tx.tableSession.findMany({
+        where: { gameId },
+        select: { seatIndex: true }
+      });
+      const usedIndexes = new Set(takenSeats.map((s: { seatIndex: number }) => s.seatIndex));
+      const seatIndex = [...Array(game.maxSeats).keys()].find(i => !usedIndexes.has(i));
+      if (seatIndex === undefined) throw new Error('No seats available');
 
-        // Create transaction record
-        await tx.transactionRecord.create({
-          data: {
-            userId: playerId,
-            type: TransactionType.BUYIN,
-            amount,
-            gameId,
-            balanceBefore: user.balance,
-            balanceAfter: updatedUser.balance
+      // Deduct balance
+      const updatedUser = await tx.user.update({
+        where: { id: playerId },
+        data: {
+          balance: {
+            decrement: amount
           }
-        });
-
-        // Create or update the table session
-        const session = await tx.tableSession.upsert({
-          where: {
-            gameId_playerId: {
-              gameId,
-              playerId
-            }
-          },
-          update: {
-            stack: amount
-          },
-          create: {
-            gameId,
-            playerId,
-            stack: amount,
-            seatIndex: await this.getNextAvailableSeat(gameId)
-          }
-        });
-
-        return session;
+        },
+        select: { balance: true }
       });
 
-      return result;
-    } catch (error) {
-      console.error('Failed to process initial buy-in:', error);
-      throw error;
-    }
+      // Create transaction record
+      await tx.transactionRecord.create({
+        data: {
+          userId: playerId,
+          type: 'BUYIN',
+          amount,
+          gameId,
+          balanceBefore: user.balance,
+          balanceAfter: updatedUser.balance
+        }
+      });
+
+      // Create table session
+      await tx.tableSession.create({
+        data: {
+          gameId,
+          playerId,
+          stack: amount,
+          seatIndex
+        }
+      });
+    });
   }
 
   /**
