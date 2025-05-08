@@ -1,6 +1,9 @@
 import { PrismaClient, Prisma } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+import { GameManager } from './game-manager.service';
+import { GameNotFoundError } from '../errors/game-errors';
 
-const prisma = new PrismaClient();
+////////////////////////////////////////
 
 // Define transaction types as const for type safety
 const TransactionType = {
@@ -13,6 +16,12 @@ const TransactionType = {
 const MAX_SEAT_RETRIES = 3;
 
 export class BuyInManager {
+  private gameManager: GameManager;
+
+  constructor() {
+    this.gameManager = GameManager.getInstance();
+  }
+
   /**
    * Validates if a buy-in amount is within the game's limits
    * @param gameId The ID of the game
@@ -22,16 +31,9 @@ export class BuyInManager {
    */
   async validateBuyIn(gameId: string, amount: number): Promise<boolean> {
     try {
-      const game = await prisma.game.findUnique({
-        where: { id: gameId },
-        select: {
-          minBuyIn: true,
-          maxBuyIn: true
-        }
-      });
-
+      const game = await this.gameManager.getGameById(gameId);
       if (!game) {
-        throw new Error(`Game with ID ${gameId} not found`);
+        throw new GameNotFoundError(gameId);
       }
 
       // Check if we're using default values (shouldn't happen due to schema defaults)
@@ -56,23 +58,15 @@ export class BuyInManager {
    */
   async processInitialBuyIn(gameId: string, playerId: string, amount: number): Promise<void> {
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      // Check that game and user exist
-      const [game, user] = await Promise.all([
-        tx.game.findUnique({
-          where: { id: gameId },
-          select: {
-            minBuyIn: true,
-            maxBuyIn: true,
-            maxSeats: true
-          }
-        }),
-        tx.user.findUnique({
-          where: { id: playerId },
-          select: { balance: true }
-        })
-      ]);
+      // Check that game exists using GameManager
+      const game = await this.gameManager.getGameById(gameId);
+      if (!game) throw new GameNotFoundError(gameId);
 
-      if (!game) throw new Error(`Game ${gameId} not found`);
+      const user = await tx.user.findUnique({
+        where: { id: playerId },
+        select: { balance: true }
+      });
+
       if (!user) throw new Error(`User ${playerId} not found`);
 
       // Validate buy-in amount
@@ -143,14 +137,10 @@ export class BuyInManager {
     while (retries < MAX_SEAT_RETRIES) {
       try {
         return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-          // Get the game's maxSeats
-          const game = await tx.game.findUnique({
-            where: { id: gameId },
-            select: { maxSeats: true }
-          });
-
+          // Get the game using GameManager
+          const game = await this.gameManager.getGameById(gameId);
           if (!game) {
-            throw new Error(`Game ${gameId} not found`);
+            throw new GameNotFoundError(gameId);
           }
 
           // Get all current sessions with their seat indices

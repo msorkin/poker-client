@@ -31,12 +31,12 @@ This plan details the step-by-step migration from in-memory data structures to a
 - [ ] Test authentication flows with admin privileges
 
 ## 3. Game Management (Phase 1)
-- [x] Refactor game creation to write to the `Game` table via Prisma
+- [x] **Refactor game creation to write to the `Game` table via Prisma**
     - [x] Replace in-memory game creation with Prisma `create`
     - [x] Add min/max buy-in configuration
     - [x] Add player limit configuration
     - [x] Store game status, createdAt, etc.
-- [ ] Implement buy-in management system
+- [~x~] **Implement buy-in management system**
     - [x] Create BuyInManager service
     - [x] Add buy-in validation logic
     - [ ] Implement rebuy functionality // ----COME BACK TO THIS AFTER MVP---- 
@@ -46,7 +46,27 @@ This plan details the step-by-step migration from in-memory data structures to a
         - [ ] Ensure player has sufficient balance
         - [ ] Update `TableSession.stack` with rebuy amount
         - [ ] Create `TransactionRecord` with type `REBUY`
-- [ ] Refactor game lookup and listing to use Prisma queries
+- [x] **Refactor game lookup and listing to use Prisma queries**
+    - [x] **Extract game lookup logic to a service file**
+    - [x] Create GameManager class (if it doesn't exist)
+    - [x] Add getGameById(gameId: string) method using Prisma prisma.game.findUnique()
+    - [x] Include hands, sessions, and transactions in include if needed
+- [ ] **Replace in-memory lookup in PokerGame.ts**
+    - [x] Replace any code like this.games[gameId] with await gameManager.getGameById(gameId)
+    - [ ] Ensure async handling is used where necessary (e.g., await and Promise management)
+- [ ] **List available games endpoint**
+    - [ ] In your Express (or similar) route, add /games GET endpoint
+    - [ ] Query prisma.game.findMany()
+        - [ ] Only return games with status WAITING
+        - [ ] Limit fields (e.g., no hands or sessions unless explicitly needed)
+    - [ ] Return array of games to frontend
+- [ ] **Update frontend game lobby (if exists)**
+    - [ ] Use fetch('/games') to list available tables
+    - [ ] Allow player to click and join a game
+- [ ] **Testing**
+    - [ ] Create seed script that generates 2–3 WAITING games
+    - [ ] Use Postman or curl to hit /games endpoint and confirm structure
+    - [ ] Write unit test (optional) for getGameById()
 - [ ] Update all game-related logic to use DB IDs
 - [ ] Add game update and delete endpoints
 - [ ] Test game CRUD and buy-in flows thoroughly
@@ -54,7 +74,7 @@ This plan details the step-by-step migration from in-memory data structures to a
 ## 4. Hand Management (Phase 2)
 - [ ] Refactor hand creation to write to the `Hand` table via Prisma
     - [ ] Store handNumber, state, createdAt, gameId
-    - [ ] Add rake calculation and tracking
+    - [ ] Add rake calculation and tracking ---- POST MVP -------
     - [ ] Add action history recording
     - [ ] Track blind positions
 - [ ] Create HandHistory system

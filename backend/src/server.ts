@@ -7,6 +7,7 @@ import { Player } from './Player';
 import { PrismaClient } from '@prisma/client';
 import { GameService } from './services/game.service';
 import { GameRecoveryService } from './services/game-recovery.service';
+import gamesRouter from './routes/games.router';
 
 //Print which DB we're using
 console.log("DATABASE_URL:", process.env.DATABASE_URL);
@@ -44,6 +45,9 @@ let activeGames = new Map<string, { game: PokerGame; controller: PokerGameContro
     console.error('Failed to recover active games:', error);
   }
 })();
+
+// Routes
+app.use('/games', gamesRouter);
 
 // --- API Routes ---
 

@@ -2,8 +2,11 @@ import { PrismaClient } from '@prisma/client';
 import { PokerGame } from '../POkerGame';
 import { PokerGameController } from '../PokerGameController';
 import { Player } from '../Player';
+import { prisma } from '../lib/prisma';
+import { GameManager } from './game-manager.service';
+import { GameNotFoundError } from '../errors/game-errors';
 
-const prisma = new PrismaClient();
+///////////////////////////////////////////////////////////////
 
 interface SessionWithPlayer {
   player: {
@@ -14,35 +17,36 @@ interface SessionWithPlayer {
 }
 
 export class GameRecoveryService {
+  private gameManager: GameManager;
+
+  constructor() {
+    this.gameManager = GameManager.getInstance();
+  }
+
   async recoverActiveGames(): Promise<Map<string, { game: PokerGame; controller: PokerGameController }>> {
     const activeGames = new Map();
 
     try {
-      // Find all games that are not completed
+      // Find all non-closed games using GameManager
       const dbGames = await prisma.game.findMany({
         where: {
           status: {
             not: 'CLOSED'
           }
         },
-        include: {
-          sessions: {
-            include: {
-              player: true
-            }
-          },
-          hands: {
-            orderBy: {
-              handNumber: 'desc'
-            },
-            take: 1
-          }
-        }
+        select: { id: true }
       });
 
-      for (const dbGame of dbGames) {
+      // Get full game details for each active game
+      for (const { id } of dbGames) {
+        const game = await this.gameManager.getGameById(id);
+        if (!game) {
+          console.warn(`Game ${id} not found during recovery`);
+          continue;
+        }
+
         // Recreate Player instances
-        const players = dbGame.sessions.map((session: SessionWithPlayer) => 
+        const players = game.sessions.map((session: SessionWithPlayer) => 
           new Player(
             session.player.id,
             session.player.username,
@@ -51,12 +55,12 @@ export class GameRecoveryService {
         );
 
         // Recreate game instance
-        const game = new PokerGame(players, dbGame.smallBlind, dbGame.bigBlind);
-        const controller = new PokerGameController(game, 7);
+        const pokerGame = new PokerGame(players, game.smallBlind, game.bigBlind);
+        const controller = new PokerGameController(pokerGame, 7);
 
         // If game was in progress, restore the last hand state
-        if (dbGame.status === 'IN_PROGRESS' && dbGame.hands.length > 0) {
-          const lastHand = dbGame.hands[0];
+        if (game.status === 'IN_PROGRESS' && game.hands.length > 0) {
+          const lastHand = game.hands[0];
           const playerStates = JSON.parse(lastHand.playerStates);
           
           // Restore player states
@@ -69,7 +73,7 @@ export class GameRecoveryService {
           }
         }
 
-        activeGames.set(dbGame.id, { game, controller });
+        activeGames.set(game.id, { game: pokerGame, controller });
       }
 
       return activeGames;
@@ -81,6 +85,12 @@ export class GameRecoveryService {
 
   async syncGameState(gameId: string, game: PokerGame): Promise<void> {
     try {
+      // Verify game exists
+      const dbGame = await this.gameManager.getGameById(gameId);
+      if (!dbGame) {
+        throw new GameNotFoundError(gameId);
+      }
+
       const gameState = game.getGameState();
       
       // Update player stacks in database

@@ -1,8 +1,11 @@
 import { PrismaClient } from '@prisma/client';
 import { Player } from '../Player';
 import { Card } from '../Card';
+import { prisma } from '../lib/prisma';
+import { GameManager } from './game-manager.service';
+import { GameNotFoundError } from '../errors/game-errors';
 
-const prisma = new PrismaClient();
+///////////////////////////////////////////////
 
 interface PlayerState {
   id: string;
@@ -21,6 +24,12 @@ interface SidePot {
 }
 
 export class GameService {
+  private gameManager: GameManager;
+
+  constructor() {
+    this.gameManager = GameManager.getInstance();
+  }
+
   async createGame(players: Player[], smallBlind: number = 5, bigBlind: number = 10, maxHands: number = 10, maxSeats: number = 6) {
     try {
       // Validate maxSeats is between 2 and 9
@@ -174,22 +183,11 @@ export class GameService {
 
   async getGame(gameId: string) {
     try {
-      return await prisma.game.findUnique({
-        where: { id: gameId },
-        include: {
-          sessions: {
-            include: {
-              player: true
-            }
-          },
-          hands: {
-            orderBy: {
-              handNumber: 'desc'
-            },
-            take: 1
-          }
-        }
-      });
+      const game = await this.gameManager.getGameById(gameId);
+      if (!game) {
+        throw new GameNotFoundError(gameId);
+      }
+      return game;
     } catch (error) {
       console.error('Failed to get game:', error);
       throw error;
