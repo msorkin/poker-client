@@ -7,6 +7,7 @@ import { Player } from './Player';
 import { PrismaClient } from '@prisma/client';
 import { GameService } from './services/game.service';
 import { GameRecoveryService } from './services/game-recovery.service';
+import { GameManager } from './services/game-manager.service';
 import gamesRouter from './routes/games.router';
 
 //Print which DB we're using
@@ -48,6 +49,26 @@ let activeGames = new Map<string, { game: PokerGame; controller: PokerGameContro
 
 // Routes
 app.use('/games', gamesRouter);
+
+// Helper to get or load a PokerGame instance
+async function getOrLoadPokerGame(gameId: string): Promise<{ game: PokerGame; controller: PokerGameController } | null> {
+  let activeGame = activeGames.get(gameId);
+  if (activeGame) return activeGame;
+  const gameData = await GameManager.getInstance().getGameById(gameId);
+  if (!gameData) return null;
+  console.log('gameData loaded from DB:', gameData);
+
+  // Transform DB sessions to Player instances
+  const players = gameData.sessions.map((session: any) =>
+    new Player(session.player.id, session.player.username, session.stack)
+  );
+
+  // Pass the correct arguments to PokerGame
+  const pokerGame = new PokerGame(players, gameData.smallBlind, gameData.bigBlind);
+  const controller = new PokerGameController(pokerGame, 7);
+  activeGames.set(gameId, { game: pokerGame, controller });
+  return { game: pokerGame, controller };
+}
 
 // --- API Routes ---
 
@@ -112,13 +133,10 @@ app.post('/games', async (req: Request, res: Response) => {
 app.get('/games/:gameId/state/:playerId', async (req: Request, res: Response) => {
   try {
     const { gameId, playerId } = req.params;
-    
-    const activeGame = activeGames.get(gameId);
-    if (!activeGame) {
-      return res.status(404).json({ error: 'Game not found' });
-    }
-
-    const state = activeGame.controller.getUIState(playerId);
+    const result = await getOrLoadPokerGame(gameId);
+    if (!result) return res.status(404).json({ error: 'Game not found' });
+    const { game: pokerGame, controller } = result;
+    const state = controller.getUIState(playerId);
     res.json(state);
   } catch (err) {
     console.error('Failed to get game state:', err);
@@ -130,43 +148,27 @@ app.get('/games/:gameId/state/:playerId', async (req: Request, res: Response) =>
 app.post('/games/:gameId/start', async (req: Request, res: Response) => {
   try {
     const { gameId } = req.params;
-    
-    const activeGame = activeGames.get(gameId);
-    if (!activeGame) {
-      return res.status(404).json({ error: 'Game not found' });
-    }
-
-    // Update game status in database
+    const result = await getOrLoadPokerGame(gameId);
+    if (!result) return res.status(404).json({ error: 'Game not found' });
+    const { game: pokerGame, controller } = result;
     await gameService.updateGameStatus(gameId, 'IN_PROGRESS');
-
-    // Start the game
-    activeGame.game.startHand();
-
-    // Kick off async game loop
+    pokerGame.startHand();
     (async () => {
       try {
-        const game = activeGame.game;
-        await game.bettingRound("Preflop");
-
-        let remaining = game.getActivePlayers();
+        await pokerGame.bettingRound("Preflop");
+        let remaining = pokerGame.getActivePlayers();
         if (remaining.length <= 1) {
           console.log("🏆 Only one player left — hand ends.");
           return;
         }
-
-        game.dealFlop();
-        await game.bettingRound("Flop");
-
-        game.dealTurn();
-        await game.bettingRound("Turn");
-
-        game.dealRiver();
-        await game.bettingRound("River");
-
-        game.showdown();
-
-        // Create hand record in database
-        const gameState = game.getGameState();
+        pokerGame.dealFlop();
+        await pokerGame.bettingRound("Flop");
+        pokerGame.dealTurn();
+        await pokerGame.bettingRound("Turn");
+        pokerGame.dealRiver();
+        await pokerGame.bettingRound("River");
+        pokerGame.showdown();
+        const gameState = pokerGame.getGameState();
         await gameService.createHand(gameId, 1, {
           communityCards: gameState.communityCards,
           pot: gameState.pot,
@@ -185,12 +187,10 @@ app.post('/games/:gameId/start', async (req: Request, res: Response) => {
           })),
           isShowdown: gameState.showdown || false
         });
-
       } catch (err) {
         console.error("Game loop error:", err);
       }
     })();
-
     res.status(200).json({ success: true });
   } catch (err) {
     console.error('Failed to start game:', err);
@@ -203,21 +203,14 @@ app.post('/games/:gameId/leave', async (req: Request, res: Response) => {
   try {
     const { gameId } = req.params;
     const { playerId } = req.body;
-    
-    const activeGame = activeGames.get(gameId);
-    if (!activeGame) {
-      return res.status(404).json({ error: 'Game not found' });
-    }
-
-    // Remove player from table in DB
+    const result = await getOrLoadPokerGame(gameId);
+    if (!result) return res.status(404).json({ error: 'Game not found' });
+    const { game: pokerGame, controller } = result;
     await gameService.removePlayerFromTable(gameId, playerId);
-
-    // Check if table should be removed from memory
     const activePlayerCount = await gameService.getActivePlayerCount(gameId);
     if (activePlayerCount === 0) {
       activeGames.delete(gameId);
     }
-
     res.status(200).json({ success: true });
   } catch (err) {
     console.error('Failed to handle player leave:', err);
@@ -229,13 +222,8 @@ app.post('/games/:gameId/leave', async (req: Request, res: Response) => {
 app.post('/admin/games/:gameId/close', async (req: Request, res: Response) => {
   try {
     const { gameId } = req.params;
-    
-    // Force close the table in DB
     await gameService.forceCloseTable(gameId);
-
-    // Remove from memory if exists
     activeGames.delete(gameId);
-
     res.status(200).json({ success: true });
   } catch (err) {
     console.error('Failed to force close table:', err);
@@ -248,22 +236,15 @@ app.post('/games/:gameId/action', async (req: Request, res: Response) => {
   try {
     const { gameId } = req.params;
     const { playerId, action } = req.body;
-    
-    const activeGame = activeGames.get(gameId);
-    if (!activeGame) {
-      return res.status(404).json({ error: 'Game not found' });
-    }
-
-    const player = activeGame.game.getPlayers().find(p => p.id === playerId);
+    const result = await getOrLoadPokerGame(gameId);
+    if (!result) return res.status(404).json({ error: 'Game not found' });
+    const { game: pokerGame, controller } = result;
+    const player = pokerGame.getPlayers().find(p => p.id === playerId);
     if (!player) {
       return res.status(400).json({ error: 'Player not found in game' });
     }
-
-    activeGame.game.handleAction(player, action);
-    
-    // Sync game state to database after each action
-    await gameRecoveryService.syncGameState(gameId, activeGame.game);
-    
+    pokerGame.handleAction(player, action);
+    await gameRecoveryService.syncGameState(gameId, pokerGame);
     res.status(200).json({ success: true });
   } catch (err) {
     console.error('Failed to handle action:', err);
@@ -276,22 +257,15 @@ app.post('/games/:gameId/amount', async (req: Request, res: Response) => {
   try {
     const { gameId } = req.params;
     const { playerId, amount } = req.body;
-    
-    const activeGame = activeGames.get(gameId);
-    if (!activeGame) {
-      return res.status(404).json({ error: 'Game not found' });
-    }
-
-    const player = activeGame.game.getPlayers().find(p => p.id === playerId);
+    const result = await getOrLoadPokerGame(gameId);
+    if (!result) return res.status(404).json({ error: 'Game not found' });
+    const { game: pokerGame, controller } = result;
+    const player = pokerGame.getPlayers().find(p => p.id === playerId);
     if (!player) {
       return res.status(400).json({ error: 'Player not found in game' });
     }
-
-    activeGame.game.handleAmount(player, amount);
-    
-    // Sync game state to database after amount action
-    await gameRecoveryService.syncGameState(gameId, activeGame.game);
-    
+    pokerGame.handleAmount(player, amount);
+    await gameRecoveryService.syncGameState(gameId, pokerGame);
     res.status(200).json({ success: true });
   } catch (err) {
     console.error('Failed to handle amount:', err);
@@ -303,18 +277,14 @@ app.post('/games/:gameId/amount', async (req: Request, res: Response) => {
 app.get('/games/:gameId/amount-range/:playerId', async (req: Request, res: Response) => {
   try {
     const { gameId, playerId } = req.params;
-    
-    const activeGame = activeGames.get(gameId);
-    if (!activeGame) {
-      return res.status(404).json({ error: 'Game not found' });
-    }
-
-    const player = activeGame.game.getPlayers().find(p => p.id === playerId);
+    const result = await getOrLoadPokerGame(gameId);
+    if (!result) return res.status(404).json({ error: 'Game not found' });
+    const { game: pokerGame, controller } = result;
+    const player = pokerGame.getPlayers().find(p => p.id === playerId);
     if (!player) {
       return res.status(400).json({ error: 'Player not found in game' });
     }
-
-    const range = activeGame.game.calculateAmountRange(player);
+    const range = pokerGame.calculateAmountRange(player);
     res.json({ ready: true, range });
   } catch (err) {
     console.error('Failed to get amount range:', err);
