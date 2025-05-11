@@ -1,7 +1,7 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { GameManager } from './game-manager.service';
-import { GameNotFoundError } from '../errors/game-errors';
+import { GameNotFoundError, PlayerNotFoundError, InsufficientBalanceError, PlayerAlreadySeatedError, NoSeatsAvailableError } from '../errors/game-errors';
 
 ////////////////////////////////////////
 
@@ -66,8 +66,7 @@ export class BuyInManager {
         where: { id: playerId },
         select: { balance: true }
       });
-
-      if (!user) throw new Error(`User ${playerId} not found`);
+      if (!user) throw new PlayerNotFoundError(playerId, gameId);
 
       // Validate buy-in amount
       if (amount < game.minBuyIn || amount > game.maxBuyIn) {
@@ -76,7 +75,15 @@ export class BuyInManager {
 
       // Check user balance
       if (user.balance < amount) {
-        throw new Error('Insufficient balance for buy-in');
+        throw new InsufficientBalanceError(playerId, user.balance, amount);
+      }
+
+      // Check if player is already seated
+      const existingSession = await tx.tableSession.findFirst({
+        where: { gameId, playerId }
+      });
+      if (existingSession) {
+        throw new PlayerAlreadySeatedError(playerId, gameId);
       }
 
       // Find first available seat
@@ -86,7 +93,7 @@ export class BuyInManager {
       });
       const usedIndexes = new Set(takenSeats.map((s: { seatIndex: number }) => s.seatIndex));
       const seatIndex = [...Array(game.maxSeats).keys()].find(i => !usedIndexes.has(i));
-      if (seatIndex === undefined) throw new Error('No seats available');
+      if (seatIndex === undefined) throw new NoSeatsAvailableError(gameId);
 
       // Deduct balance
       const updatedUser = await tx.user.update({
