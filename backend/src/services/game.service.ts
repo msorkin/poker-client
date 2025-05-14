@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, BettingRound } from '@prisma/client';
 import { Player } from '../Player';
 import { Card } from '../Card';
 import { prisma } from '../lib/prisma';
@@ -30,16 +30,25 @@ export class GameService {
     this.gameManager = GameManager.getInstance();
   }
 
-  async createGame(players: Player[], smallBlind: number = 5, bigBlind: number = 10, maxHands: number = 10, maxSeats: number = 6) {
+  async createGame({
+    smallBlind = 5,
+    bigBlind = 10,
+    maxHands = 10,
+    maxSeats = 6,
+    minBuyIn = 100,
+    maxBuyIn = 1000
+  }: {
+    smallBlind?: number;
+    bigBlind?: number;
+    maxHands?: number;
+    maxSeats?: number;
+    minBuyIn?: number;
+    maxBuyIn?: number;
+  }) {
     try {
       // Validate maxSeats is between 2 and 9
       if (maxSeats < 2 || maxSeats > 9) {
         throw new Error('maxSeats must be between 2 and 9 inclusive');
-      }
-
-      // Validate number of players doesn't exceed maxSeats
-      if (players.length > maxSeats) {
-        throw new Error(`Number of players (${players.length}) exceeds maximum seats (${maxSeats})`);
       }
 
       // Create the game record with initial configuration
@@ -50,25 +59,10 @@ export class GameService {
           bigBlind,
           maxHands,
           maxSeats,
+          minBuyIn,
+          maxBuyIn,
           currentHand: 0,
-          dealerIndex: 0,
-          // Create table sessions for each player
-          sessions: {
-            create: players.map((player, index) => ({
-              player: {
-                connect: { id: player.id }
-              },
-              stack: player.stack,
-              seatIndex: index
-            }))
-          }
-        },
-        include: {
-          sessions: {
-            include: {
-              player: true
-            }
-          }
+          dealerIndex: 0
         }
       });
 
@@ -113,7 +107,10 @@ export class GameService {
       currentBet,
       dealerIndex,
       playerStates,
-      isShowdown = false
+      isShowdown = false,
+      round = BettingRound.PREFLOP,
+      sbIndex,
+      bbIndex
     }: {
       communityCards: Card[];
       pot: number;
@@ -122,6 +119,9 @@ export class GameService {
       dealerIndex: number;
       playerStates: PlayerState[];
       isShowdown?: boolean;
+      round?: BettingRound;
+      sbIndex: number;
+      bbIndex: number;
     }
   ) {
     try {
@@ -136,7 +136,10 @@ export class GameService {
           dealerIndex,
           isShowdown,
           playerStates: JSON.stringify(playerStates),
-          completedAt: isShowdown ? new Date() : null
+          completedAt: isShowdown ? new Date() : null,
+          state: round,
+          sbIndex,
+          bbIndex
         }
       });
     } catch (error) {
@@ -306,5 +309,22 @@ export class GameService {
       console.error('Failed to force close table:', error);
       throw error;
     }
+  }
+
+  async getNextHandNumber(gameId: string): Promise<number> {
+    try {
+      const count = await prisma.hand.count({ where: { gameId } });
+      return count + 1;
+    } catch (error) {
+      console.error('Failed to get next hand number:', error);
+      throw error;
+    }
+  }
+
+  async updateHandRound(handId: string, round: BettingRound): Promise<void> {
+    await prisma.hand.update({
+      where: { id: handId },
+      data: { state: round }
+    });
   }
 }

@@ -5,6 +5,7 @@ import { Player } from '../Player';
 import { prisma } from '../lib/prisma';
 import { GameManager } from './game-manager.service';
 import { GameNotFoundError } from '../errors/game-errors';
+import { GameService } from './game.service';
 
 ///////////////////////////////////////////////////////////////
 
@@ -18,9 +19,11 @@ interface SessionWithPlayer {
 
 export class GameRecoveryService {
   private gameManager: GameManager;
+  private gameService: GameService;
 
   constructor() {
     this.gameManager = GameManager.getInstance();
+    this.gameService = new GameService();
   }
 
   async recoverActiveGames(): Promise<Map<string, { game: PokerGame; controller: PokerGameController }>> {
@@ -55,8 +58,8 @@ export class GameRecoveryService {
         );
 
         // Recreate game instance
-        const pokerGame = new PokerGame(players, game.smallBlind, game.bigBlind);
-        const controller = new PokerGameController(pokerGame, 7);
+        const pokerGame = new PokerGame(players, id, this.gameService, game.smallBlind, game.bigBlind);
+        const controller = new PokerGameController(id, players, this.gameService, game.maxHands);
 
         // If game was in progress, restore the last hand state
         if (game.status === 'IN_PROGRESS' && game.hands.length > 0) {

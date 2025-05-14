@@ -2,7 +2,8 @@ import { HandEvaluator, describeHand } from './HandEvaluator';
 import { Deck } from './Deck';
 import { Player } from './Player';
 import { Card } from './Card';
-
+import { GameService } from './services/game.service';
+import { BettingRound } from '@prisma/client';
 
 export class PokerGame {
   private players!: Player[];
@@ -12,6 +13,9 @@ export class PokerGame {
   private pot: number = 0;
   private currentBet: number = 0;
   private sidePots: { amount: number; contenders: Player[] }[] = [];
+  private gameService: GameService;
+  private gameId: string;
+  private currentHandId: string | null = null;
 
   private pendingActionPlayer: Player | null = null;
   private currentAction: string = '';
@@ -31,7 +35,7 @@ export class PokerGame {
   private lastShowdownSidePots: { amount: number; contenders: Player[] }[] = [];
   private lastShowdownHandRankings: Map<string, string> = new Map();
 
-  constructor(players: Player[], smallBlind: number = 5, bigBlind: number = 10) {
+  constructor(players: Player[], gameId: string, gameService: GameService, smallBlind: number = 5, bigBlind: number = 10) {
     if (players.length < 2 || players.length > 6) {
       throw new Error("This version supports between 2 and 6 players.");
     }
@@ -40,6 +44,8 @@ export class PokerGame {
     this.deck = new Deck();
     this.smallBlind = smallBlind;
     this.bigBlind = bigBlind;
+    this.gameService = gameService;
+    this.gameId = gameId;
   }
 
   public getAmountRange(): { min: number; max: number } {
@@ -275,7 +281,7 @@ export class PokerGame {
     return null;
   }
 
-  public startHand() {
+  public async startHand() {
     // Now we filter out players with zero stack when starting a new hand
     this.players = this.players.filter(p => p.stack > 0);
     
@@ -297,7 +303,40 @@ export class PokerGame {
     this.players.forEach(p => p.receiveCards(this.deck.deal(2)));
   
     console.log("Hole cards dealt.");
+
+    // Calculate blind positions
+    const sbIndex = (this.dealerIndex + 1) % this.players.length;
+    const bbIndex = (this.dealerIndex + 2) % this.players.length;
+
+    // Post blinds
     this.postBlinds();
+
+    // Create the hand record in the database
+    const handNumber = await this.gameService.getNextHandNumber(this.gameId);
+    const hand = await this.gameService.createHand(this.gameId, handNumber, {
+      communityCards: [],
+      pot: this.pot,
+      sidePots: [],
+      currentBet: this.currentBet,
+      dealerIndex: this.dealerIndex,
+      playerStates: this.players.map(p => ({
+        id: p.id,
+        name: p.name,
+        stack: p.stack,
+        currentBet: p.currentBet,
+        totalContributed: p.totalContributed,
+        folded: p.folded,
+        allIn: p.allIn,
+        holeCards: p.holeCards
+      })),
+      isShowdown: false,
+      round: BettingRound.PREFLOP,
+      sbIndex,
+      bbIndex
+    });
+    this.currentHandId = hand.id;
+    await this.gameService.updateHandRound(this.currentHandId, BettingRound.PREFLOP);
+    console.log("Updated hand state to PREFLOP");
 
     this.currentPlayerAwaitingAction = this.getCurrentTurnPlayer();
     this.pendingActionOptions = ['fold', 'call', 'raise']; // adjust dynamically if needed
@@ -324,22 +363,49 @@ export class PokerGame {
     console.log(`${bb.name} posts big blind: ${bbAmount}`);
   }
 
-  dealFlop() {
+  async dealFlop() {
     const flop = this.deck.deal(3);
     this.communityCards.push(...flop);
     console.log(`Flop: ${flop.map(card => card.toString()).join(' ')}`);
+
+    if (this.currentHandId) {
+      try {
+        await this.gameService.updateHandRound(this.currentHandId, BettingRound.FLOP);
+        console.log("✅ Updated hand state to FLOP");
+      } catch (err) {
+        console.error("❌ Failed to update FLOP round in DB", err);
+      }
+    }
   }
 
-  dealTurn() {
+  async dealTurn() {
     const turn = this.deck.deal(1);
     this.communityCards.push(...turn);
     console.log(`Turn: ${turn[0].toString()}`);
+
+    if (this.currentHandId) {
+      try {
+        await this.gameService.updateHandRound(this.currentHandId, BettingRound.TURN);
+        console.log("✅ Updated hand state to TURN");
+      } catch (err) {
+        console.error("❌ Failed to update TURN round in DB", err);
+      }
+    }
   }
 
-  dealRiver() {
+  async dealRiver() {
     const river = this.deck.deal(1);
     this.communityCards.push(...river);
     console.log(`River: ${river[0].toString()}`);
+
+    if (this.currentHandId) {
+      try {
+        await this.gameService.updateHandRound(this.currentHandId, BettingRound.RIVER);
+        console.log("✅ Updated hand state to RIVER");
+      } catch (err) {
+        console.error("❌ Failed to update RIVER round in DB", err);
+      }
+    }
   }
 
   private getBettingOrder(roundName: string): Player[] {
@@ -427,6 +493,12 @@ export class PokerGame {
 
     // Set showdown flag to true
     this.isShowdown = true;
+    (async () => {
+      if (this.currentHandId) {
+        await this.gameService.updateHandRound(this.currentHandId, BettingRound.SHOWDOWN);
+        console.log("Updated hand state to SHOWDOWN");
+      }
+    })();
   }
 
   displayChipCounts() {
@@ -730,7 +802,7 @@ console.log(`Pot is now ${this.pot} (Main pot: ${mainPot}, Side pot: ${sidePot})
       pot: this.isShowdown ? this.lastShowdownPot : this.pot,
       sidePots: (this.isShowdown ? this.lastShowdownSidePots : this.sidePots).map(pot => ({
         amount: pot.amount,
-        contenders: pot.contenders.map(p => p.name)
+        contenders: pot.contenders.map(p => p.id)
       })),
       players: this.players.map(player => ({
         id: player.id,
@@ -814,5 +886,9 @@ console.log(`Pot is now ${this.pot} (Main pot: ${mainPot}, Side pot: ${sidePot})
       min: Math.min(minRaiseTo, player.stack),
       max: player.stack
     };
+  }
+
+  public getCurrentHandId(): string | null {
+    return this.currentHandId;
   }
 }

@@ -46,3 +46,10 @@ export class PlayerAlreadySeatedError extends GameError {
     this.name = 'PlayerAlreadySeatedError';
   }
 }
+
+export class NoSeatsAvailableError extends GameError {
+  constructor(gameId: string) {
+    super(`No seats available in game ${gameId}.`);
+    this.name = 'NoSeatsAvailableError';
+  }
+}

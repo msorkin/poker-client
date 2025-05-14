@@ -69,10 +69,13 @@ model Hand {
   sidePots       String   // JSON array of side pots
   currentBet     Int
   dealerIndex    Int
+  sbIndex        Int
+  bbIndex        Int
   isShowdown     Boolean  @default(false)
   playerStates   String   // JSON array of player states
   createdAt      DateTime @default(now())
   completedAt    DateTime?
+  state BettingRound @default(PREFLOP)
 }
 
 model TableSession {

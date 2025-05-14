@@ -111,6 +111,6 @@
     "skipLibCheck": true                                 /* Skip type checking all .d.ts files. */
   },
 
-  "include": ["src/**/*", "prisma/**/*"],
+  "include": ["src/**/*", "prisma/**/*", "scripts/test-db.ts", "scripts/seed.ts"],
   "exclude": ["node_modules"]
 }

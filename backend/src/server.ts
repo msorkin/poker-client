@@ -63,9 +63,9 @@ async function getOrLoadPokerGame(gameId: string): Promise<{ game: PokerGame; co
     new Player(session.player.id, session.player.username, session.stack)
   );
 
-  // Pass the correct arguments to PokerGame
-  const pokerGame = new PokerGame(players, gameData.smallBlind, gameData.bigBlind);
-  const controller = new PokerGameController(pokerGame, 7);
+  // Pass the correct arguments to PokerGame and PokerGameController
+  const pokerGame = new PokerGame(players, gameId, gameService, gameData.smallBlind, gameData.bigBlind);
+  const controller = new PokerGameController(gameId, players, gameService, gameData.maxHands);
   activeGames.set(gameId, { game: pokerGame, controller });
   return { game: pokerGame, controller };
 }
@@ -110,14 +110,21 @@ app.post('/games', async (req: Request, res: Response) => {
     );
 
     // Create game in database
-    const dbGame = await gameService.createGame(players, 5, 10, 10, maxSeats);
-
+    const dbGame = await gameService.createGame({
+      smallBlind: 5,
+      bigBlind: 10,
+      maxHands: 10,
+      maxSeats,
+      minBuyIn: 100,
+      maxBuyIn: 1000
+    });
+    
     // Create in-memory game instance
-    const game = new PokerGame(players, dbGame.smallBlind, dbGame.bigBlind);
-    const controller = new PokerGameController(game, 7);
+    const pokerGame = new PokerGame(players, dbGame.id, gameService, dbGame.smallBlind, dbGame.bigBlind);
+    const controller = new PokerGameController(dbGame.id, players, gameService, dbGame.maxHands);
 
     // Store in active games map
-    activeGames.set(dbGame.id, { game, controller });
+    activeGames.set(dbGame.id, { game: pokerGame, controller });
 
     res.status(201).json({
       gameId: dbGame.id,
@@ -152,7 +159,7 @@ app.post('/games/:gameId/start', async (req: Request, res: Response) => {
     if (!result) return res.status(404).json({ error: 'Game not found' });
     const { game: pokerGame, controller } = result;
     await gameService.updateGameStatus(gameId, 'IN_PROGRESS');
-    pokerGame.startHand();
+    await pokerGame.startHand();
     (async () => {
       try {
         await pokerGame.bettingRound("Preflop");
@@ -161,32 +168,32 @@ app.post('/games/:gameId/start', async (req: Request, res: Response) => {
           console.log("🏆 Only one player left — hand ends.");
           return;
         }
-        pokerGame.dealFlop();
+        await pokerGame.dealFlop();
         await pokerGame.bettingRound("Flop");
-        pokerGame.dealTurn();
+        await pokerGame.dealTurn();
         await pokerGame.bettingRound("Turn");
-        pokerGame.dealRiver();
+        await pokerGame.dealRiver();
         await pokerGame.bettingRound("River");
         pokerGame.showdown();
         const gameState = pokerGame.getGameState();
-        await gameService.createHand(gameId, 1, {
-          communityCards: gameState.communityCards,
-          pot: gameState.pot,
-          sidePots: gameState.sidePots,
-          currentBet: gameState.players.reduce((max, p) => Math.max(max, p.currentBet), 0),
-          dealerIndex: 0,
-          playerStates: gameState.players.map(p => ({
-            id: p.id,
-            name: p.name,
-            stack: p.stack,
-            currentBet: p.currentBet,
-            totalContributed: p.totalContributed,
-            folded: p.folded,
-            allIn: p.allIn,
-            holeCards: p.holeCards
-          })),
-          isShowdown: gameState.showdown || false
-        });
+        const handId = pokerGame.getCurrentHandId();
+        if (handId) {
+          await gameService.completeHand(handId, {
+            communityCards: gameState.communityCards,
+            pot: gameState.pot,
+            sidePots: gameState.sidePots,
+            playerStates: gameState.players.map(p => ({
+              id: p.id,
+              name: p.name,
+              stack: p.stack,
+              currentBet: p.currentBet,
+              totalContributed: p.totalContributed,
+              folded: p.folded,
+              allIn: p.allIn,
+              holeCards: p.holeCards
+            }))
+          });
+        }
       } catch (err) {
         console.error("Game loop error:", err);
       }

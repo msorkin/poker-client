@@ -1,12 +1,17 @@
 import { PokerGame } from './POkerGame';
 import { Player } from './Player';
+import { GameService } from './services/game.service';
 
 export class PokerGameController {
   private game: PokerGame;
   private maxHands: number;
+  private gameService: GameService;
+  private gameId: string;
 
-  constructor(game: PokerGame, maxHands: number = 10) {
-    this.game = game;
+  constructor(gameId: string, players: Player[], gameService: GameService, maxHands: number = 10) {
+    this.gameId = gameId;
+    this.gameService = gameService;
+    this.game = new PokerGame(players, gameId, gameService);
     this.maxHands = maxHands;
   }
 
@@ -38,13 +43,13 @@ export class PokerGameController {
       this.game.startHand();
       await this.game.bettingRound("Preflop");
 
-      this.game.dealFlop();
+      await this.game.dealFlop();
       await this.game.bettingRound("Flop");
 
-      this.game.dealTurn();
+      await this.game.dealTurn();
       await this.game.bettingRound("Turn");
 
-      this.game.dealRiver();
+      await this.game.dealRiver();
       await this.game.bettingRound("River");
 
       this.game.showdown();

@@ -57,77 +57,102 @@ export class BuyInManager {
    * @throws Error if buy-in validation fails or if player has insufficient balance
    */
   async processInitialBuyIn(gameId: string, playerId: string, amount: number): Promise<void> {
-    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      // Check that game exists using GameManager
-      const game = await this.gameManager.getGameById(gameId);
-      if (!game) throw new GameNotFoundError(gameId);
+    const MAX_RETRIES = 3;
+    let attempts = 0;
 
-      const user = await tx.user.findUnique({
-        where: { id: playerId },
-        select: { balance: true }
-      });
-      if (!user) throw new PlayerNotFoundError(playerId, gameId);
+    while (attempts < MAX_RETRIES) {
+      try {
+        await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+          // Check that game exists using GameManager
+          const game = await this.gameManager.getGameById(gameId);
+          if (!game) throw new GameNotFoundError(gameId);
 
-      // Validate buy-in amount
-      if (amount < game.minBuyIn || amount > game.maxBuyIn) {
-        throw new Error(`Buy-in amount must be between ${game.minBuyIn} and ${game.maxBuyIn}`);
-      }
+          const user = await tx.user.findUnique({
+            where: { id: playerId },
+            select: { balance: true }
+          });
+          if (!user) throw new PlayerNotFoundError(playerId, gameId);
 
-      // Check user balance
-      if (user.balance < amount) {
-        throw new InsufficientBalanceError(playerId, user.balance, amount);
-      }
-
-      // Check if player is already seated
-      const existingSession = await tx.tableSession.findFirst({
-        where: { gameId, playerId }
-      });
-      if (existingSession) {
-        throw new PlayerAlreadySeatedError(playerId, gameId);
-      }
-
-      // Find first available seat
-      const takenSeats = await tx.tableSession.findMany({
-        where: { gameId },
-        select: { seatIndex: true }
-      });
-      const usedIndexes = new Set(takenSeats.map((s: { seatIndex: number }) => s.seatIndex));
-      const seatIndex = [...Array(game.maxSeats).keys()].find(i => !usedIndexes.has(i));
-      if (seatIndex === undefined) throw new NoSeatsAvailableError(gameId);
-
-      // Deduct balance
-      const updatedUser = await tx.user.update({
-        where: { id: playerId },
-        data: {
-          balance: {
-            decrement: amount
+          // Validate buy-in amount
+          if (amount < game.minBuyIn || amount > game.maxBuyIn) {
+            throw new Error(`Buy-in amount must be between ${game.minBuyIn} and ${game.maxBuyIn}`);
           }
-        },
-        select: { balance: true }
-      });
 
-      // Create transaction record
-      await tx.transactionRecord.create({
-        data: {
-          userId: playerId,
-          type: 'BUYIN',
-          amount,
-          gameId,
-          balanceBefore: user.balance,
-          balanceAfter: updatedUser.balance
-        }
-      });
+          // Check user balance
+          if (user.balance < amount) {
+            throw new InsufficientBalanceError(playerId, user.balance, amount);
+          }
 
-      // Create table session
-      await tx.tableSession.create({
-        data: {
-          gameId,
-          playerId,
-          stack: amount,
-          seatIndex
+          // Check if player is already seated
+          const existingSession = await tx.tableSession.findFirst({
+            where: { gameId, playerId }
+          });
+          if (existingSession) {
+            throw new PlayerAlreadySeatedError(playerId, gameId);
+          }
+
+          // Find first available seat with SERIALIZABLE isolation
+          const takenSeats = await tx.tableSession.findMany({
+            where: { gameId },
+            select: { seatIndex: true },
+            orderBy: { seatIndex: 'asc' }
+          });
+          const usedIndexes = new Set(takenSeats.map((s: { seatIndex: number }) => s.seatIndex));
+          const seatIndex = [...Array(game.maxSeats).keys()].find(i => !usedIndexes.has(i));
+          if (seatIndex === undefined) throw new NoSeatsAvailableError(gameId);
+
+          // Deduct balance
+          const updatedUser = await tx.user.update({
+            where: { id: playerId },
+            data: {
+              balance: {
+                decrement: amount
+              }
+            },
+            select: { balance: true }
+          });
+
+          // Create transaction record
+          await tx.transactionRecord.create({
+            data: {
+              userId: playerId,
+              type: 'BUYIN',
+              amount,
+              gameId,
+              balanceBefore: user.balance,
+              balanceAfter: updatedUser.balance
+            }
+          });
+
+          // Create table session
+          await tx.tableSession.create({
+            data: {
+              gameId,
+              playerId,
+              stack: amount,
+              seatIndex
+            }
+          });
+        }, {
+          isolationLevel: 'Serializable',
+          maxWait: 5000,
+          timeout: 10000
+        });
+
+        return; // success!
+      } catch (err: any) {
+        const isRetryable = err?.code === 'P2034' || err?.message?.includes('deadlock');
+        attempts++;
+
+        if (!isRetryable || attempts >= MAX_RETRIES) {
+          throw err;
         }
-      });
-    });
+
+        console.warn(`🟡 Retrying buy-in due to deadlock (attempt ${attempts})`);
+        // Add jitter between retries
+        await new Promise(res => setTimeout(res, 50 + Math.random() * 150));
+      }
+    }
   }
 
   /**

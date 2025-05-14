@@ -4,7 +4,7 @@ This plan details the step-by-step migration from in-memory data structures to a
 
 ---
 
-## 1. User Management & Financial System (Phase 1)
+## **1. User Management & Financial System (Phase 1)** [ ]
 - [x] Refactor user creation to write to the `User` table via Prisma
     - [x] Replace in-memory user creation with Prisma `create`
     - [x] Validate uniqueness of username/email at DB level
@@ -20,7 +20,7 @@ This plan details the step-by-step migration from in-memory data structures to a
     - [ ] Implement transaction history endpoint
 - [ ] Test user CRUD and financial operations thoroughly
 
-## 2. Authentication & Sessions
+## **2. Authentication & Sessions** [ ]
 - [ ] Implement signup endpoint (writes to DB, returns JWT)
 - [ ] Implement login endpoint (verifies password, returns JWT)
     - [ ] Add lastLogin timestamp update
@@ -30,7 +30,7 @@ This plan details the step-by-step migration from in-memory data structures to a
 - [ ] Add admin-specific middleware for protected routes
 - [ ] Test authentication flows with admin privileges
 
-## 3. Game Management (Phase 1)
+## **3. Game Management (Phase 1)** [x]
 - [x] **Refactor game creation to write to the `Game` table via Prisma**
     - [x] Replace in-memory game creation with Prisma `create`
     - [x] Add min/max buy-in configuration
@@ -51,27 +51,27 @@ This plan details the step-by-step migration from in-memory data structures to a
     - [x] Create GameManager class (if it doesn't exist)
     - [x] Add getGameById(gameId: string) method using Prisma prisma.game.findUnique()
     - [x] Include hands, sessions, and transactions in include if needed
-- [ ] **Replace in-memory lookup in PokerGame.ts**
+- [x] **Replace in-memory lookup in PokerGame.ts**
     - [x] Replace any code like this.games[gameId] with await gameManager.getGameById(gameId)
-    - [ ] Ensure async handling is used where necessary (e.g., await and Promise management)
-- [ ] **List available games endpoint**
-    - [ ] In your Express (or similar) route, add /games GET endpoint
-    - [ ] Query prisma.game.findMany()
-        - [ ] Only return games with status WAITING
-        - [ ] Limit fields (e.g., no hands or sessions unless explicitly needed)
-    - [ ] Return array of games to frontend
-- [ ] **Update frontend game lobby (if exists)**
-    - [ ] Use fetch('/games') to list available tables
-    - [ ] Allow player to click and join a game
-- [ ] **Testing**
-    - [ ] Create seed script that generates 2–3 WAITING games
-    - [ ] Use Postman or curl to hit /games endpoint and confirm structure
-    - [ ] Write unit test (optional) for getGameById()
-- [ ] Update all game-related logic to use DB IDs
-- [ ] Add game update and delete endpoints
-- [ ] Test game CRUD and buy-in flows thoroughly
+    - [x] Ensure async handling is used where necessary (e.g., await and Promise management)
+- [x] **List available games endpoint**
+    - [x] In your Express (or similar) route, add /games GET endpoint
+    - [x] Query prisma.game.findMany()
+        - [x] Only return games with status WAITING
+        - [x] Limit fields (e.g., no hands or sessions unless explicitly needed)
+    - [x] Return array of games to frontend
+- [x] **Update frontend game lobby (if exists)**
+    - [x] Use fetch('/games') to list available tables
+    - [x] Allow player to click and join a game
+- [x] **Testing**
+    - [x] Create seed script that generates 2–3 WAITING games
+    - [x] Use Postman or curl to hit /games endpoint and confirm structure
+    - [x] Write unit test (optional) for getGameById()
+- [x] Update all game-related logic to use DB IDs ---MVP VERSION DONE (COME BACK TO UPDATE POST MVP FETCHES)
+- [x] Add game update and delete endpoints
+    - [x] Test game CRUD and buy-in flows thoroughly
 
-## 4. Hand Management (Phase 2)
+## **4. Hand Management (Phase 2)** [ ]
 - [ ] Refactor hand creation to write to the `Hand` table via Prisma
     - [ ] Store handNumber, state, createdAt, gameId
     - [ ] Add rake calculation and tracking ---- POST MVP -------
@@ -86,7 +86,7 @@ This plan details the step-by-step migration from in-memory data structures to a
 - [ ] Add hand replay functionality
 - [ ] Test hand tracking and history thoroughly
 
-## 5. Table Sessions (Phase 1)
+## **5. Table Sessions (Phase 1)**
 - [ ] Refactor player-to-table assignment to use the `TableSession` table
     - [ ] On join, create TableSession row with initial buy-in
     - [ ] Track rebuy amounts
@@ -98,7 +98,7 @@ This plan details the step-by-step migration from in-memory data structures to a
     - [ ] Update session status
 - [ ] Test session management thoroughly
 
-## 6. Game State & Statistics (Phase 3)
+## **6. Game State & Statistics (Phase 3)**
 - [ ] Create PlayerStats system
     - [ ] Implement real-time stat tracking
     - [ ] Add historical calculations
@@ -112,7 +112,7 @@ This plan details the step-by-step migration from in-memory data structures to a
     - [ ] Add logging triggers for important actions
     - [ ] Create admin dashboard endpoints
 
-## 7. API/Server Endpoints
+## **7. API/Server Endpoints**
 - [ ] Refactor all endpoints to use Prisma for DB access
 - [ ] Add new cash game specific endpoints:
     - [ ] Buy-in management
@@ -126,14 +126,14 @@ This plan details the step-by-step migration from in-memory data structures to a
     - [ ] Transaction monitoring
 - [ ] Implement rate limiting and logging
 
-## 8. Real-Time & WebSocket Integration
+## **8. Real-Time & WebSocket Integration**
 - [ ] Update WebSocket logic to use DB-backed data
 - [ ] Add real-time balance updates
 - [ ] Implement disconnect handling
 - [ ] Add auto-action support
 - [ ] Test real-time flows thoroughly
 
-## 9. Testing & Monitoring
+## **9. Testing & Monitoring**
 - [ ] Write unit tests for new components:
     - [ ] Buy-in management
     - [ ] Transaction processing
@@ -149,7 +149,7 @@ This plan details the step-by-step migration from in-memory data structures to a
     - [ ] Performance metrics
     - [ ] Error tracking
 
-## 10. Production Readiness
+## **10. Production Readiness**
 - [ ] Optimize database performance:
     - [ ] Add indexes for common queries
     - [ ] Implement caching strategy

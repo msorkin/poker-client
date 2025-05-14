@@ -84,7 +84,9 @@ router.delete('/:gameId', async (req, res) => {
     if (game.sessions.length > 0) {
       return res.status(400).json({ error: 'Cannot delete a game that has active player sessions' });
     }
+
     // TODO: Add confirmation modal in frontend before triggering this DELETE request
+    
     await prisma.game.delete({ where: { id: gameId } });
     return res.json({ success: true });
   } catch (err: any) {
