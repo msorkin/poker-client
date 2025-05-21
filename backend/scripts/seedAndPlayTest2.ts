@@ -3,6 +3,9 @@ import { BuyInManager } from '../src/services/buy-in.service';
 import { GameService } from '../src/services/game.service';
 import { PokerGame } from '../src/POkerGame';
 import { Player } from '../src/Player';
+import seedrandom from 'seedrandom';
+
+const rng = seedrandom(Date.now().toString()); // or use a fixed string for predictable results
 
 const prisma = new PrismaClient();
 const gameService = new GameService();
@@ -45,20 +48,20 @@ async function main() {
 
   const pokerGame = new PokerGame(players, game.id, gameService, game.smallBlind, game.bigBlind);
 
-  // 🔁 Override decision methods
-  let actionCursor = 0;
-  const actions = ['raise', 'call', 'fold', 'check'];
-  const fixedAmounts = [40, 0, 0, 0];
-
-  pokerGame['requestPlayerAction'] = async function (_player: Player, options: string[]) {
-    const choice = actions[actionCursor % actions.length];
-    actionCursor++;
-    return options.includes(choice) ? choice : options[0];
+  pokerGame['requestPlayerAction'] = async function (player: Player, options: string[]) {
+    const filtered = options.filter(o => o !== 'bet'); // skip unimplemented
+    const choice = filtered[Math.floor(rng() * filtered.length)];
+    console.log(`🤖 ${player.name} chooses to ${choice}`);
+    return choice;
   };
-
-  pokerGame['requestPlayerAmount'] = async function (_player: Player, _prompt: string, min: number, max: number) {
-    return Math.min(Math.max(fixedAmounts[actionCursor % fixedAmounts.length], min), max);
+  
+  pokerGame['requestPlayerAmount'] = async function (player: Player, _prompt: string, _min: number, _max: number) {
+    // Force an amount that's higher than the player's stack to test cappedRaiseAmount logic
+    const forcedAmount = player.stack * 2;
+    console.log(`💰 ${player.name} attempts illegal raise amount ${forcedAmount}`);
+    return forcedAmount;
   };
+  
 
   const rotationHistory: { hand: number; dealerIndex: number; sbIndex: number; bbIndex: number }[] = [];
 
@@ -84,7 +87,7 @@ async function main() {
       await pokerGame.bettingRound("River");
     }
 
-    pokerGame.showdown();
+    await pokerGame.showdown();
   }
 
   // ✅ Results

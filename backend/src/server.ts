@@ -174,7 +174,7 @@ app.post('/games/:gameId/start', async (req: Request, res: Response) => {
         await pokerGame.bettingRound("Turn");
         await pokerGame.dealRiver();
         await pokerGame.bettingRound("River");
-        pokerGame.showdown();
+        await pokerGame.showdown();
         const gameState = pokerGame.getGameState();
         const handId = pokerGame.getCurrentHandId();
         if (handId) {

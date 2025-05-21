@@ -52,7 +52,7 @@ export class PokerGameController {
       await this.game.dealRiver();
       await this.game.bettingRound("River");
 
-      this.game.showdown();
+      await this.game.showdown();
       this.game.displayChipCounts();
     }
 
